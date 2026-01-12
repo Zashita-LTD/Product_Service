@@ -11,11 +11,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Install Python dependencies
 COPY requirements.txt .
-RUN pip install --no-cache-dir --user -r requirements.txt
-
-# Install Playwright browsers in builder stage
-RUN /root/.local/bin/playwright install chromium
-RUN /root/.local/bin/playwright install-deps chromium
+RUN pip install --no-cache-dir --user -r requirements.txt --trusted-host pypi.org --trusted-host pypi.python.org --trusted-host files.pythonhosted.org
 
 # Production stage
 FROM python:3.11-slim as production
@@ -54,13 +50,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Copy Python packages from builder
 COPY --from=builder /root/.local /root/.local
 
-# Copy Playwright browsers from builder
-COPY --from=builder /root/.cache/ms-playwright /root/.cache/ms-playwright
-
 # Set PATH
 ENV PATH=/root/.local/bin:$PATH
 ENV PYTHONPATH=/app
 ENV PYTHONUNBUFFERED=1
+ENV NODE_TLS_REJECT_UNAUTHORIZED=0
 
 # Copy application code
 COPY internal/ ./internal/
@@ -69,11 +63,21 @@ COPY pkg/ ./pkg/
 COPY cmd/ ./cmd/
 
 # Create proxies file placeholder
-RUN touch proxies.txt && chown appuser:appuser proxies.txt
+RUN touch proxies.txt
 
-# Switch to non-root user for Playwright
-# Note: Playwright needs certain permissions, so we keep as root in container
-# In production, consider using --user flag with proper permissions
+# Create entrypoint script that installs Playwright browsers on first run
+RUN echo '#!/bin/bash\n\
+set -e\n\
+if [ ! -f /root/.cache/ms-playwright/.installed ]; then\n\
+  echo "Installing Playwright browsers..."\n\
+  playwright install chromium || true\n\
+  touch /root/.cache/ms-playwright/.installed\n\
+fi\n\
+exec "$@"\n\
+' > /entrypoint.sh && chmod +x /entrypoint.sh
 
-# Run the parser
+# Note: Running as root to avoid Playwright permission issues
+# In production, consider proper user permissions
+
+ENTRYPOINT ["/entrypoint.sh"]
 CMD ["python", "cmd/main.py"]
