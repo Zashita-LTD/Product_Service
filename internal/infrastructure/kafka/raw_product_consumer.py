@@ -237,7 +237,7 @@ class RawProductImportHandler:
             logger.info(
                 "Product imported successfully",
                 product_uuid=product.uuid,
-                name=product.name_technical,
+                product_name=product.name_technical,
                 source_url=source_url,
             )
 
