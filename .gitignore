@@ -158,7 +158,7 @@ docker-compose.override.yml
 *-secret.yaml
 *-secrets.yaml
 
-# System files
+# System files and directories
 .config/
 .dbus/
 .docker/

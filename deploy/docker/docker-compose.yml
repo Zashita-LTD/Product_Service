@@ -150,29 +150,61 @@ services:
     networks:
       - backend
 
-  # Raw Products Import Worker
+  # Raw Products Worker (ingestion from parser-service)
   worker-raw-products:
     build:
       context: ../..
-      dockerfile: deploy/docker/Dockerfile.worker
+      dockerfile: deploy/docker/Dockerfile.worker-raw
     container_name: product-service-worker-raw
-    command: ["python", "-m", "cmd.worker-raw-products.main"]
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
       kafka:
         condition: service_healthy
     environment:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/product_service
+      REDIS_URL: redis://redis:6379/0
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
-      KAFKA_GROUP_ID: product-service-raw-consumer
-      KAFKA_RAW_PRODUCTS_TOPIC: raw-products
-      DEFAULT_CATEGORY_ID: ${DEFAULT_CATEGORY_ID:-1}
+      KAFKA_RAW_GROUP_ID: raw-products-worker
+      KAFKA_RAW_TOPICS: raw-products
       LOG_LEVEL: INFO
       LOG_FORMAT: json
     networks:
       - backend
     restart: unless-stopped
+
+  # Parser Service (web scraping for construction material stores)
+  parser:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile.parser
+    container_name: product-service-parser
+    depends_on:
+      kafka:
+        condition: service_healthy
+    environment:
+      ENABLED_PARSERS: ${ENABLED_PARSERS:-petrovich,leroymerlin,sdvor,obi}
+      PETROVICH_BASE_URL: ${PETROVICH_BASE_URL:-https://petrovich.ru}
+      LEROYMERLIN_BASE_URL: ${LEROYMERLIN_BASE_URL:-https://leroymerlin.ru}
+      SDVOR_BASE_URL: ${SDVOR_BASE_URL:-https://sdvor.com}
+      OBI_BASE_URL: ${OBI_BASE_URL:-https://obi.ru}
+      HEADLESS_BROWSER: "true"
+      MAX_CONCURRENT_REQUESTS: 5
+      REQUEST_TIMEOUT: 30000
+      REQUESTS_PER_SECOND: 2
+      MAX_RETRIES: 3
+      RETRY_DELAY: 5
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      KAFKA_RAW_PRODUCTS_TOPIC: raw-products
+      LOG_LEVEL: INFO
+    networks:
+      - backend
+    # Parser runs as a scheduled job, not continuously
+    # Use: docker-compose run --rm parser
+    profiles:
+      - parser
 
 networks:
   backend:
