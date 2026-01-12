@@ -20,27 +20,27 @@ from internal.domain.value_objects import QualityScore
 class PostgresProductRepository:
     """
     PostgreSQL implementation of the Product Repository.
-    
+
     Uses asyncpg for async database operations and implements
     the Outbox Pattern for reliable event publishing.
     """
-    
+
     def __init__(self, pool: Pool) -> None:
         """
         Initialize the repository.
-        
+
         Args:
             pool: asyncpg connection pool.
         """
         self._pool = pool
-    
+
     async def get_by_uuid(self, uuid: UUID) -> Optional[ProductFamily]:
         """
         Get a product family by UUID.
-        
+
         Args:
             uuid: The UUID of the product family.
-            
+
         Returns:
             ProductFamily if found, None otherwise.
         """
@@ -54,19 +54,19 @@ class PostgresProductRepository:
                 """,
                 uuid,
             )
-            
+
             if not row:
                 return None
-            
+
             return self._row_to_entity(row)
-    
+
     async def get_by_name(self, name_technical: str) -> Optional[ProductFamily]:
         """
         Get a product family by technical name.
-        
+
         Args:
             name_technical: The technical name of the product.
-            
+
         Returns:
             ProductFamily if found, None otherwise.
         """
@@ -80,12 +80,38 @@ class PostgresProductRepository:
                 """,
                 name_technical,
             )
-            
+
             if not row:
                 return None
-            
+
             return self._row_to_entity(row)
-    
+
+    async def get_by_source_url(self, source_url: str) -> Optional[ProductFamily]:
+        """
+        Get a product family by source URL (scraped origin).
+
+        Args:
+            source_url: The URL from where the product was scraped.
+
+        Returns:
+            ProductFamily if found, None otherwise.
+        """
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                SELECT uuid, name_technical, category_id, quality_score,
+                       enrichment_status, created_at, updated_at
+                FROM product_families
+                WHERE source_url = $1
+                """,
+                source_url,
+            )
+
+            if not row:
+                return None
+
+            return self._row_to_entity(row)
+
     async def create_with_outbox(
         self,
         product: ProductFamily,
@@ -93,14 +119,14 @@ class PostgresProductRepository:
     ) -> ProductFamily:
         """
         Create a product family with an outbox event atomically.
-        
+
         Implements the Outbox Pattern for reliable event publishing.
         Both the product and the event are created in a single transaction.
-        
+
         Args:
             product: The product family to create.
             event: The outbox event to create.
-            
+
         Returns:
             The created product family.
         """
@@ -122,7 +148,7 @@ class PostgresProductRepository:
                     product.created_at,
                     product.updated_at,
                 )
-                
+
                 # Insert outbox event
                 await conn.execute(
                     """
@@ -137,16 +163,16 @@ class PostgresProductRepository:
                     json.dumps(event.payload),
                     event.created_at,
                 )
-        
+
         return product
-    
+
     async def update(self, product: ProductFamily) -> ProductFamily:
         """
         Update a product family.
-        
+
         Args:
             product: The product family to update.
-            
+
         Returns:
             The updated product family.
         """
@@ -168,9 +194,9 @@ class PostgresProductRepository:
                 product.enrichment_status,
                 product.updated_at,
             )
-        
+
         return product
-    
+
     async def list_by_category(
         self,
         category_id: int,
@@ -179,12 +205,12 @@ class PostgresProductRepository:
     ) -> list[ProductFamily]:
         """
         List product families by category.
-        
+
         Args:
             category_id: The category ID to filter by.
             limit: Maximum number of results.
             offset: Number of results to skip.
-            
+
         Returns:
             List of product families.
         """
@@ -202,19 +228,19 @@ class PostgresProductRepository:
                 limit,
                 offset,
             )
-            
+
             return [self._row_to_entity(row) for row in rows]
-    
+
     async def get_unprocessed_outbox_events(
         self,
         limit: int = 100,
     ) -> list[OutboxEvent]:
         """
         Get unprocessed outbox events for publishing.
-        
+
         Args:
             limit: Maximum number of events to retrieve.
-            
+
         Returns:
             List of unprocessed outbox events.
         """
@@ -231,13 +257,13 @@ class PostgresProductRepository:
                 """,
                 limit,
             )
-            
+
             return [self._row_to_outbox_event(row) for row in rows]
-    
+
     async def mark_event_processed(self, event_id: int) -> None:
         """
         Mark an outbox event as processed.
-        
+
         Args:
             event_id: The ID of the event to mark as processed.
         """
@@ -251,21 +277,21 @@ class PostgresProductRepository:
                 event_id,
                 datetime.utcnow(),
             )
-    
+
     def _row_to_entity(self, row: asyncpg.Record) -> ProductFamily:
         """
         Convert a database row to a ProductFamily entity.
-        
+
         Args:
             row: Database row.
-            
+
         Returns:
             ProductFamily entity.
         """
         quality_score = None
         if row["quality_score"] is not None:
             quality_score = QualityScore(value=Decimal(str(row["quality_score"])))
-        
+
         return ProductFamily(
             uuid=row["uuid"],
             name_technical=row["name_technical"],
@@ -275,21 +301,21 @@ class PostgresProductRepository:
             created_at=row["created_at"],
             updated_at=row["updated_at"],
         )
-    
+
     def _row_to_outbox_event(self, row: asyncpg.Record) -> OutboxEvent:
         """
         Convert a database row to an OutboxEvent entity.
-        
+
         Args:
             row: Database row.
-            
+
         Returns:
             OutboxEvent entity.
         """
         payload = row["payload"]
         if isinstance(payload, str):
             payload = json.loads(payload)
-        
+
         return OutboxEvent(
             id=row["id"],
             aggregate_type=row["aggregate_type"],
@@ -304,12 +330,12 @@ class PostgresProductRepository:
 async def create_pool(dsn: str, min_size: int = 10, max_size: int = 50) -> Pool:
     """
     Create an asyncpg connection pool.
-    
+
     Args:
         dsn: Database connection string.
         min_size: Minimum pool size.
         max_size: Maximum pool size.
-        
+
     Returns:
         asyncpg connection pool.
     """

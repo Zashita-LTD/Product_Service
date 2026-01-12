@@ -1,0 +1,3 @@
+"""
+Worker Raw Products module.
+"""
