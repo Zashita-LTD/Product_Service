@@ -157,3 +157,38 @@ docker-compose.override.yml
 # Kubernetes secrets
 *-secret.yaml
 *-secrets.yaml
+
+# System files and directories
+.config/
+.dbus/
+.docker/
+.dotnet/
+.kube/
+.pki/
+.face
+.face.icon
+.gitconfig
+.profile
+.bashrc
+.bash_history
+.bash_logout
+.xsessionrc
+.xorgxrdp*.log*
+.ICEauthority
+.Xauthority
+.Xresources
+Desktop/
+thinclient_drives/
+Видео/
+Документы/
+Загрузки/
+Изображения/
+Музыка/
+Общедоступные/
+Шаблоны/
+Рабочий стол/
+app.py
+test_api.py
+secrets/
+projects/
+data/

@@ -20,8 +20,8 @@ pydantic==2.5.3
 pydantic-settings==2.1.0
 
 # Google Cloud AI
-google-cloud-aiplatform==1.38.1
-vertexai==1.38.1
+google-cloud-aiplatform>=1.38.1
+vertexai>=1.43.0
 
 # Resilience
 circuitbreaker==2.0.0
