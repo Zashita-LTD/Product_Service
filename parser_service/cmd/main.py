@@ -8,6 +8,7 @@ import asyncio
 import signal
 from typing import List, Optional
 import json
+import time
 
 from dotenv import load_dotenv
 from playwright.async_api import async_playwright, Browser, BrowserContext
@@ -22,6 +23,12 @@ from parser_service.internal.parsers import (
 )
 from parser_service.internal.models.product import RawProduct
 from parser_service.config.settings import settings
+from parser_service.internal.metrics import (
+    PAGES_PARSED,
+    PRODUCTS_EXTRACTED,
+    PARSE_DURATION,
+    KAFKA_MESSAGES_PRODUCED,
+)
 
 
 # Load environment variables
@@ -163,6 +170,9 @@ class ParserScheduler:
                     break
 
                 print(f"\n[{parser.name}] Processing category {i}/{len(category_urls)}: {category_url}")
+                
+                # Track category page parsing
+                PAGES_PARSED.labels(parser_name=parser.name, page_type='category').inc()
 
                 # Step 3: Get product URLs from category
                 product_count = 0
@@ -178,17 +188,32 @@ class ParserScheduler:
                     # Step 4: Parse product page
                     product_page = await self._context.new_page()
                     try:
+                        parse_start = time.time()
                         raw_product = await parser.parse_product(product_page, product_url)
+                        parse_duration = time.time() - parse_start
+                        
+                        # Track parsing duration
+                        PARSE_DURATION.labels(parser_name=parser.name, page_type='product').observe(parse_duration)
+                        
+                        # Track product page parsing
+                        PAGES_PARSED.labels(parser_name=parser.name, page_type='product').inc()
 
                         if raw_product:
                             # Step 5: Publish to Kafka
                             await self._publish_product(raw_product)
                             print(f"    ✓ Published: {raw_product.name_original[:50]}...")
+                            
+                            # Track successful extraction
+                            PRODUCTS_EXTRACTED.labels(parser_name=parser.name, status='success').inc()
                         else:
                             print("    ✗ Failed to parse product")
+                            # Track failed extraction
+                            PRODUCTS_EXTRACTED.labels(parser_name=parser.name, status='error').inc()
 
                     except Exception as e:
                         print(f"    ✗ Error parsing product: {e}")
+                        # Track failed extraction
+                        PRODUCTS_EXTRACTED.labels(parser_name=parser.name, status='error').inc()
 
                     finally:
                         await product_page.close()
@@ -210,10 +235,17 @@ class ParserScheduler:
         """
         event = product.to_kafka_event()
 
-        await self._producer.send(
-            settings.KAFKA_RAW_PRODUCTS_TOPIC,
-            value=event,
-        )
+        try:
+            await self._producer.send(
+                settings.KAFKA_RAW_PRODUCTS_TOPIC,
+                value=event,
+            )
+            # Track successful Kafka publish
+            KAFKA_MESSAGES_PRODUCED.labels(status='success').inc()
+        except Exception as e:
+            # Track failed Kafka publish
+            KAFKA_MESSAGES_PRODUCED.labels(status='error').inc()
+            raise
 
 
 async def main() -> None:

@@ -1,0 +1,30 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ['alertmanager:9093']
+
+rule_files:
+  - 'alerts.yml'
+
+scrape_configs:
+  - job_name: 'product-service-api'
+    static_configs:
+      - targets: ['api:8000']
+  
+  - job_name: 'product-service-workers'
+    static_configs:
+      - targets: 
+          - 'worker-enrichment:8001'
+          - 'worker-raw-products:8002'
+  
+  - job_name: 'parser-service'
+    static_configs:
+      - targets: ['parser:8003']
+  
+  - job_name: 'kafka'
+    static_configs:
+      - targets: ['kafka:9092']

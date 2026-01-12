@@ -7,7 +7,9 @@ from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Depends, Header, status
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
+from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 
 from internal.usecase.create_product import (
     CreateProductUseCase,
@@ -362,3 +364,17 @@ async def health_check() -> dict:
         Health status.
     """
     return {"status": "healthy", "service": "product-service"}
+
+
+@router.get("/metrics")
+async def metrics():
+    """
+    Prometheus metrics endpoint.
+    
+    Returns:
+        Prometheus metrics in text format.
+    """
+    return Response(
+        content=generate_latest(),
+        media_type=CONTENT_TYPE_LATEST
+    )
