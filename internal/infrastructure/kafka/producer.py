@@ -19,10 +19,10 @@ logger = get_logger(__name__)
 class KafkaProducer:
     """
     Kafka producer for publishing domain events.
-    
+
     Handles serialization and reliable delivery of events.
     """
-    
+
     def __init__(
         self,
         bootstrap_servers: str,
@@ -30,7 +30,7 @@ class KafkaProducer:
     ) -> None:
         """
         Initialize the Kafka producer.
-        
+
         Args:
             bootstrap_servers: Comma-separated list of Kafka brokers.
             client_id: Client identifier for the producer.
@@ -38,7 +38,7 @@ class KafkaProducer:
         self._bootstrap_servers = bootstrap_servers
         self._client_id = client_id
         self._producer: Optional[AIOKafkaProducer] = None
-    
+
     async def start(self) -> None:
         """Start the Kafka producer."""
         self._producer = AIOKafkaProducer(
@@ -47,18 +47,16 @@ class KafkaProducer:
             value_serializer=lambda v: json.dumps(v).encode("utf-8"),
             key_serializer=lambda k: k.encode("utf-8") if k else None,
             acks="all",
-            enable_idempotence=True,
-            max_in_flight_requests_per_connection=5,
         )
         await self._producer.start()
         logger.info("Kafka producer started", bootstrap_servers=self._bootstrap_servers)
-    
+
     async def stop(self) -> None:
         """Stop the Kafka producer."""
         if self._producer:
             await self._producer.stop()
             logger.info("Kafka producer stopped")
-    
+
     async def publish_event(
         self,
         topic: str,
@@ -66,14 +64,14 @@ class KafkaProducer:
     ) -> None:
         """
         Publish an outbox event to Kafka.
-        
+
         Args:
             topic: The Kafka topic to publish to.
             event: The outbox event to publish.
         """
         if not self._producer:
             raise RuntimeError("Producer not started")
-        
+
         key = f"{event.aggregate_type}:{event.aggregate_id}"
         value = {
             "event_type": event.event_type,
@@ -82,20 +80,20 @@ class KafkaProducer:
             "payload": event.payload,
             "created_at": event.created_at.isoformat(),
         }
-        
+
         await self._producer.send_and_wait(
             topic=topic,
             key=key,
             value=value,
         )
-        
+
         logger.info(
             "Event published to Kafka",
             topic=topic,
             event_type=event.event_type,
             aggregate_id=str(event.aggregate_id),
         )
-    
+
     async def publish_message(
         self,
         topic: str,
@@ -104,7 +102,7 @@ class KafkaProducer:
     ) -> None:
         """
         Publish a generic message to Kafka.
-        
+
         Args:
             topic: The Kafka topic to publish to.
             key: Message key.
@@ -112,23 +110,23 @@ class KafkaProducer:
         """
         if not self._producer:
             raise RuntimeError("Producer not started")
-        
+
         await self._producer.send_and_wait(
             topic=topic,
             key=key,
             value=value,
         )
-        
+
         logger.debug("Message published to Kafka", topic=topic, key=key)
 
 
 class OutboxPublisher:
     """
     Outbox event publisher.
-    
+
     Polls the outbox table and publishes events to Kafka.
     """
-    
+
     def __init__(
         self,
         producer: KafkaProducer,
@@ -138,7 +136,7 @@ class OutboxPublisher:
     ) -> None:
         """
         Initialize the outbox publisher.
-        
+
         Args:
             producer: Kafka producer instance.
             repository: Product repository for outbox events.
@@ -149,18 +147,18 @@ class OutboxPublisher:
         self._repository = repository
         self._topic = topic
         self._batch_size = batch_size
-    
+
     async def publish_pending_events(self) -> int:
         """
         Publish all pending outbox events.
-        
+
         Returns:
             Number of events published.
         """
         events = await self._repository.get_unprocessed_outbox_events(
             limit=self._batch_size
         )
-        
+
         published_count = 0
         for event in events:
             try:
@@ -178,12 +176,12 @@ class OutboxPublisher:
                 )
                 # Continue with other events
                 continue
-        
+
         if published_count > 0:
             logger.info(
                 "Published outbox events",
                 count=published_count,
                 total=len(events),
             )
-        
+
         return published_count

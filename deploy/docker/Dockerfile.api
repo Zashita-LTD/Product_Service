@@ -35,14 +35,12 @@ ENV PATH=/root/.local/bin:$PATH
 # Copy application code
 COPY internal/ ./internal/
 COPY pkg/ ./pkg/
+COPY cmd/__init__.py ./cmd/__init__.py
 COPY cmd/api/ ./cmd/api/
 
 # Set Python path
 ENV PYTHONPATH=/app
 ENV PYTHONUNBUFFERED=1
-
-# Switch to non-root user
-USER appuser
 
 # Expose port
 EXPOSE 8000

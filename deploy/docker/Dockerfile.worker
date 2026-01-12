@@ -40,8 +40,5 @@ COPY cmd/worker-enrichment/ ./cmd/worker-enrichment/
 ENV PYTHONPATH=/app
 ENV PYTHONUNBUFFERED=1
 
-# Switch to non-root user
-USER appuser
-
 # Run the worker
 CMD ["python", "cmd/worker-enrichment/main.py"]

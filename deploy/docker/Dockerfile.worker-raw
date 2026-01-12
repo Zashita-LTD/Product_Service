@@ -40,8 +40,5 @@ COPY cmd/worker-raw-products/ ./cmd/worker-raw-products/
 ENV PYTHONPATH=/app
 ENV PYTHONUNBUFFERED=1
 
-# Switch to non-root user
-USER appuser
-
 # Run the worker
 CMD ["python", "cmd/worker-raw-products/main.py"]
