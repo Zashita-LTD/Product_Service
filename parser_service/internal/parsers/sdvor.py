@@ -176,7 +176,7 @@ class SdvorParser(BaseParser):
                     price_clean = price_text.replace("₽", "").replace("руб", "").replace(" ", "").replace(",", ".")
                     product.price_amount = float(price_clean)
                     break
-                except:
+                except Exception:
                     pass
 
         # Extract availability

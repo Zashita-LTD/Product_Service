@@ -146,7 +146,7 @@ class PetrovichParser(BaseParser):
             price_text = await price_elem.get_attribute("content") or await price_elem.inner_text()
             try:
                 product.price_amount = float(price_text.replace(",", ".").replace(" ", ""))
-            except:
+            except Exception:
                 pass
 
         # Extract images

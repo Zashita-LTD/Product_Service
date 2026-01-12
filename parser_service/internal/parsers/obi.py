@@ -36,7 +36,7 @@ class ObiParser(BaseParser):
         # Wait for React to render categories
         try:
             await page.wait_for_selector('a[href*="/catalog/"]', timeout=10000)
-        except:
+        except Exception:
             pass
 
         # Extract category links
@@ -65,7 +65,7 @@ class ObiParser(BaseParser):
             # Wait for React to render product cards
             try:
                 await page.wait_for_selector('.product-card, [data-testid="product-card"]', timeout=10000)
-            except:
+            except Exception:
                 # No products found, end pagination
                 break
 
@@ -119,7 +119,7 @@ class ObiParser(BaseParser):
             # Wait for React to render the product content
             try:
                 await page.wait_for_selector('h1, [data-testid="product-title"]', timeout=10000)
-            except:
+            except Exception:
                 print(f"Timeout waiting for product content on {url}")
                 return None
 
@@ -224,7 +224,7 @@ class ObiParser(BaseParser):
                     price_clean = price_text.replace("₽", "").replace("руб", "").replace(" ", "").replace(",", ".")
                     product.price_amount = float(price_clean)
                     break
-                except:
+                except Exception:
                     pass
 
         # Extract availability
@@ -296,7 +296,7 @@ class ObiParser(BaseParser):
                     await tab_elem.click()
                     await page.wait_for_timeout(500)  # Wait for tab content to load
                     break
-                except:
+                except Exception:
                     pass
 
         # Extract attributes
