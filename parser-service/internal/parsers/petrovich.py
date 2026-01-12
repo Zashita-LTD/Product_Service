@@ -584,7 +584,8 @@ class PetrovichParser(BaseParser):
                     try:
                         full_url = urljoin(self._base_url, src)
                         images.append(ProductImage(url=full_url, position=idx))
-                    except:
+                    except Exception:
+                        # Skip invalid image URLs
                         pass
             
             result["images"] = images[:10]  # Limit to 10 images
@@ -603,7 +604,8 @@ class PetrovichParser(BaseParser):
                             type=doc_type,
                             file_format="pdf" if href.endswith(".pdf") else None,
                         ))
-                    except:
+                    except Exception:
+                        # Skip invalid document URLs
                         pass
             
             result["documents"] = documents
