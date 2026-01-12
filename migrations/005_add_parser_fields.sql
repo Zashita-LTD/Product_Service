@@ -11,9 +11,9 @@ ADD COLUMN IF NOT EXISTS brand VARCHAR(255),
 ADD COLUMN IF NOT EXISTS description TEXT,
 ADD COLUMN IF NOT EXISTS schema_org_data JSONB;
 
--- Add unique constraint on source_url
-ALTER TABLE product_families 
-ADD CONSTRAINT unique_source_url UNIQUE (source_url);
+-- Add unique constraint on source_url (partial index to allow multiple NULLs)
+CREATE UNIQUE INDEX IF NOT EXISTS idx_product_families_source_url 
+ON product_families(source_url) WHERE source_url IS NOT NULL;
 
 -- Indexes for filtering and searching
 CREATE INDEX IF NOT EXISTS idx_product_families_brand 

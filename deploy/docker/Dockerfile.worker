@@ -34,15 +34,13 @@ ENV PATH=/root/.local/bin:$PATH
 # Copy application code
 COPY internal/ ./internal/
 COPY pkg/ ./pkg/
+COPY cmd/__init__.py ./cmd/__init__.py
 COPY cmd/worker-enrichment/ ./cmd/worker-enrichment/
 COPY cmd/worker-raw-products/ ./cmd/worker-raw-products/
 
 # Set Python path
 ENV PYTHONPATH=/app
 ENV PYTHONUNBUFFERED=1
-
-# Switch to non-root user
-USER appuser
 
 # Run the worker
 CMD ["python", "cmd/worker-enrichment/main.py"]

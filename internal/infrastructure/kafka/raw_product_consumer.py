@@ -45,12 +45,15 @@ class RawProductConsumer:
         self._consumer: Optional[AIOKafkaConsumer] = None
         self._handler: Optional["RawProductImportHandler"] = None
         self._running = False
+        self._max_retries = 3  # Maximum retries before committing failed message
+        self._retry_counts: dict[str, int] = {}  # Track retries per message key
 
         # Statistics
         self._stats = {
             "imported": 0,
             "duplicates": 0,
             "errors": 0,
+            "skipped": 0,  # Messages skipped after max retries
             "total_processed": 0,
         }
 
@@ -106,6 +109,9 @@ class RawProductConsumer:
                 if not self._running:
                     break
 
+                # Create unique key for retry tracking
+                msg_key = f"{msg.topic}:{msg.partition}:{msg.offset}"
+
                 try:
                     result = await self._process_message(msg)
 
@@ -122,18 +128,41 @@ class RawProductConsumer:
                     if self._stats["total_processed"] % 100 == 0:
                         logger.info("Import progress", **self._stats)
 
+                    # Clear retry count on success
+                    self._retry_counts.pop(msg_key, None)
                     await self._consumer.commit()
                 except Exception as e:
+                    # Track retries for this message
+                    self._retry_counts[msg_key] = self._retry_counts.get(msg_key, 0) + 1
+                    retry_count = self._retry_counts[msg_key]
+
                     logger.error(
                         "Error processing message",
                         topic=msg.topic,
                         partition=msg.partition,
                         offset=msg.offset,
+                        retry=retry_count,
+                        max_retries=self._max_retries,
                         error=str(e),
                     )
-                    self._stats["errors"] += 1
-                    self._stats["total_processed"] += 1
-                    # Don't commit on error - message will be reprocessed
+
+                    if retry_count >= self._max_retries:
+                        # Skip message after max retries to avoid infinite loop
+                        logger.warning(
+                            "Max retries reached, skipping message",
+                            topic=msg.topic,
+                            partition=msg.partition,
+                            offset=msg.offset,
+                            source_url=msg.value.get("source_url") if isinstance(msg.value, dict) else None,
+                        )
+                        self._stats["skipped"] += 1
+                        self._stats["total_processed"] += 1
+                        self._retry_counts.pop(msg_key, None)
+                        await self._consumer.commit()
+                    else:
+                        self._stats["errors"] += 1
+                        self._stats["total_processed"] += 1
+                        # Don't commit - message will be reprocessed on next poll
         except KafkaError as e:
             logger.error("Kafka consumer error", error=str(e))
             raise

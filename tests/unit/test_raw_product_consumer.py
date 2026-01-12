@@ -149,6 +149,8 @@ class TestRawProductConsumer:
         assert consumer._stats["imported"] == 0
         assert consumer._stats["duplicates"] == 0
         assert consumer._stats["errors"] == 0
+        assert consumer._stats["skipped"] == 0
+        assert consumer._max_retries == 3
 
     def test_set_handler(self, consumer):
         """Test setting handler."""
