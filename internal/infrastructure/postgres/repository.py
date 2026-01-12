@@ -467,11 +467,11 @@ class PostgresProductRepository:
             price_conditions = []
             if min_price is not None:
                 price_conditions.append(f"p.amount >= ${param_num}")
-                params.append(float(min_price))
+                params.append(min_price)
                 param_num += 1
             if max_price is not None:
                 price_conditions.append(f"p.amount <= ${param_num}")
-                params.append(float(max_price))
+                params.append(max_price)
                 param_num += 1
             conditions.extend(price_conditions)
 
@@ -509,9 +509,7 @@ class PostgresProductRepository:
             LIMIT ${param_num} OFFSET ${param_num + 1}
         """
 
-        params.extend([limit, offset])
-
-        # Count query
+        # Count query uses same filters but no limit/offset
         count_query = f"""
             SELECT COUNT(DISTINCT pf.uuid)
             FROM product_families pf
@@ -519,9 +517,14 @@ class PostgresProductRepository:
             WHERE {where_clause}
         """
 
+        # Parameters for count query (without limit and offset)
+        count_params = params.copy()
+        # Parameters for data query (with limit and offset)
+        params.extend([limit, offset])
+
         async with self._pool.acquire() as conn:
-            rows = await conn.fetch(query, *params[:-2])
-            count_row = await conn.fetchval(count_query, *params[:-2])
+            rows = await conn.fetch(query, *params)
+            count_row = await conn.fetchval(count_query, *count_params)
 
             products = []
             for row in rows:
@@ -681,11 +684,11 @@ class PostgresProductRepository:
             price_conditions = []
             if min_price is not None:
                 price_conditions.append(f"p.amount >= ${param_num}")
-                params.append(float(min_price))
+                params.append(min_price)
                 param_num += 1
             if max_price is not None:
                 price_conditions.append(f"p.amount <= ${param_num}")
-                params.append(float(max_price))
+                params.append(max_price)
                 param_num += 1
             conditions.extend(price_conditions)
 
@@ -717,9 +720,7 @@ class PostgresProductRepository:
             LIMIT ${param_num} OFFSET ${param_num + 1}
         """
 
-        params.extend([limit, offset])
-
-        # Count query
+        # Count query uses same filters but no limit/offset
         count_query = f"""
             SELECT COUNT(DISTINCT pf.uuid)
             FROM product_families pf
@@ -727,9 +728,14 @@ class PostgresProductRepository:
             WHERE {where_clause}
         """
 
+        # Parameters for count query (without limit and offset)
+        count_params = params.copy()
+        # Parameters for data query (with limit and offset)
+        params.extend([limit, offset])
+
         async with self._pool.acquire() as conn:
-            rows = await conn.fetch(query_sql, *params[:-2])
-            count_row = await conn.fetchval(count_query, *params[:-2])
+            rows = await conn.fetch(query_sql, *params)
+            count_row = await conn.fetchval(count_query, *count_params)
 
             products = []
             for row in rows:

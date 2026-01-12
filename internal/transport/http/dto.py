@@ -4,6 +4,8 @@ Data Transfer Objects for Product Service API.
 Contains Pydantic models for request/response validation.
 """
 
+from __future__ import annotations
+
 from datetime import datetime
 from decimal import Decimal
 from typing import List, Optional
