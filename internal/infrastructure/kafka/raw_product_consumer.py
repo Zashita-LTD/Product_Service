@@ -5,7 +5,7 @@ Reads messages from the 'raw-products' topic and imports them into the database.
 """
 
 import json
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 from uuid import uuid4
 
 from aiokafka import AIOKafkaConsumer
@@ -14,6 +14,9 @@ from aiokafka.errors import KafkaError
 from internal.domain.product import OutboxEvent, ProductFamily
 from internal.infrastructure.postgres.repository import PostgresProductRepository
 from pkg.logger.logger import get_logger
+
+if TYPE_CHECKING:
+    from internal.usecase.category_service import CategoryService
 
 logger = get_logger(__name__)
 
@@ -200,6 +203,7 @@ class RawProductImportHandler:
     def __init__(
         self,
         repository: PostgresProductRepository,
+        category_service: Optional["CategoryService"] = None,
         default_category_id: int = 1,
     ) -> None:
         """
@@ -207,9 +211,11 @@ class RawProductImportHandler:
 
         Args:
             repository: PostgresProductRepository instance.
+            category_service: CategoryService for category resolution (optional).
             default_category_id: Default category ID for uncategorized products.
         """
         self._repository = repository
+        self._category_service = category_service
         self._default_category_id = default_category_id
 
     async def handle(self, raw_product: dict) -> str:
@@ -247,7 +253,10 @@ class RawProductImportHandler:
             return "error"
 
         # 3. Resolve category from breadcrumbs
-        category_id = await self._resolve_category(raw_product.get("category_path", []))
+        category_id = await self._resolve_category(
+            category_path=raw_product.get("category_path", []),
+            source_name=raw_product.get("source_name"),
+        )
 
         # 4. Create product with all related data
         try:
@@ -282,25 +291,52 @@ class RawProductImportHandler:
             )
             return "error"
 
-    async def _resolve_category(self, category_path: list[str]) -> int:
+    async def _resolve_category(
+        self, category_path: list[str], source_name: Optional[str] = None
+    ) -> int:
         """
         Resolve category ID from category breadcrumbs.
 
-        For now, returns a default category ID.
-        In production, this should map category paths to actual category IDs.
+        Uses CategoryService for automatic mapping if available.
+        Falls back to default category ID if service not configured.
 
         Args:
             category_path: List of category names (breadcrumbs).
+            source_name: Name of the source (e.g., petrovich.ru).
 
         Returns:
             Category ID.
         """
-        # TODO: Implement actual category mapping
-        # For now, return the configured default category ID
-        if category_path:
-            logger.debug("Category path", path=category_path)
+        # Use CategoryService if available
+        if self._category_service and category_path and source_name:
+            try:
+                category_id = await self._category_service.resolve_category(
+                    source_name=source_name,
+                    source_path=category_path,
+                )
+                logger.debug(
+                    "Category resolved via CategoryService",
+                    category_id=category_id,
+                    source_name=source_name,
+                    category_path=category_path,
+                )
+                return category_id
+            except Exception as e:
+                logger.warning(
+                    "Failed to resolve category via CategoryService",
+                    source_name=source_name,
+                    category_path=category_path,
+                    error=str(e),
+                )
 
-        # Return configured default category for uncategorized products
+        # Fallback to default category
+        if category_path:
+            logger.debug(
+                "Using default category (no CategoryService or resolution failed)",
+                path=category_path,
+                default_category_id=self._default_category_id,
+            )
+
         return self._default_category_id
 
     async def _create_product(
