@@ -3,6 +3,7 @@ Category Service Use Case.
 
 Provides business logic for category management and mapping.
 """
+
 import hashlib
 from decimal import Decimal
 from typing import Optional
@@ -47,9 +48,7 @@ class CategoryService:
         self._repository = repository
         self._matcher = matcher or CategoryMatcher()
 
-    async def resolve_category(
-        self, source_name: str, source_path: list[str]
-    ) -> int:
+    async def resolve_category(self, source_name: str, source_path: list[str]) -> int:
         """
         Resolve category ID from source path.
 
@@ -83,9 +82,7 @@ class CategoryService:
 
         # 2. Try fuzzy matching
         existing_categories = await self._repository.get_tree()
-        match_result = await self._matcher.find_best_match(
-            source_path, existing_categories
-        )
+        match_result = await self._matcher.find_best_match(source_path, existing_categories)
 
         if match_result:
             category_id, confidence = match_result
@@ -177,9 +174,7 @@ class CategoryService:
         )
         raise NotImplementedError("Category merge not yet implemented")
 
-    async def suggest_mappings(
-        self, source_name: str
-    ) -> list[MappingSuggestion]:
+    async def suggest_mappings(self, source_name: str) -> list[MappingSuggestion]:
         """
         Suggest category mappings for unmapped source categories.
 
@@ -195,9 +190,7 @@ class CategoryService:
             List of mapping suggestions.
         """
         # This is a placeholder for future implementation
-        logger.warning(
-            "Suggest mappings not yet implemented", source_name=source_name
-        )
+        logger.warning("Suggest mappings not yet implemented", source_name=source_name)
         return []
 
     async def get_by_id(self, category_id: int) -> Optional[Category]:

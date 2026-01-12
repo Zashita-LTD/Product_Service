@@ -3,6 +3,7 @@ Category Matcher for fuzzy matching and automatic category mapping.
 
 Provides fuzzy matching capabilities to map source categories to unified taxonomy.
 """
+
 import re
 from decimal import Decimal
 from typing import Optional
@@ -75,9 +76,7 @@ class CategoryMatcher:
 
         return None
 
-    def _calculate_similarity(
-        self, path1: list[str], path2: list[str]
-    ) -> Decimal:
+    def _calculate_similarity(self, path1: list[str], path2: list[str]) -> Decimal:
         """
         Calculate similarity score between two category paths.
 

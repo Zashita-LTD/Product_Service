@@ -1,7 +1,7 @@
 """
 Unit tests for category domain entities.
 """
-import pytest
+
 from decimal import Decimal
 
 from internal.domain.category import (

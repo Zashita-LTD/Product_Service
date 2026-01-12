@@ -160,9 +160,7 @@ class PostgresCategoryRepository:
 
             return self._row_to_entity(row)
 
-    async def find_mapping(
-        self, source_name: str, source_path: list[str]
-    ) -> Optional[int]:
+    async def find_mapping(self, source_name: str, source_path: list[str]) -> Optional[int]:
         """
         Find category ID by source mapping.
 

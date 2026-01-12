@@ -3,6 +3,7 @@ Domain model for Category.
 
 This module contains category-related domain entities following DDD principles.
 """
+
 from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
@@ -26,6 +27,7 @@ class Category:
         created_at: Timestamp of creation.
         updated_at: Timestamp of last update.
     """
+
     id: int
     parent_id: Optional[int]
     name: str
@@ -73,6 +75,7 @@ class CategoryMapping:
         is_manual: Whether this is a manual or automatic mapping.
         created_at: Timestamp of creation.
     """
+
     id: int
     source_name: str
     source_path: list[str]
@@ -110,6 +113,7 @@ class CategoryTreeNode:
         category: The category entity.
         children: List of child category tree nodes.
     """
+
     category: Category
     children: list["CategoryTreeNode"] = field(default_factory=list)
 
@@ -138,6 +142,7 @@ class MappingSuggestion:
         confidence: Confidence score for the suggestion (0.0-1.0).
         reason: Human-readable reason for the suggestion.
     """
+
     source_name: str
     source_path: list[str]
     suggested_category_id: int

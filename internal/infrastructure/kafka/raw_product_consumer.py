@@ -156,7 +156,11 @@ class RawProductConsumer:
                             topic=msg.topic,
                             partition=msg.partition,
                             offset=msg.offset,
-                            source_url=msg.value.get("source_url") if isinstance(msg.value, dict) else None,
+                            source_url=(
+                                msg.value.get("source_url")
+                                if isinstance(msg.value, dict)
+                                else None
+                            ),
                         )
                         self._stats["skipped"] += 1
                         self._stats["total_processed"] += 1

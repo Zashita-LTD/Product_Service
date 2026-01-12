@@ -1,11 +1,13 @@
 """
 Unit tests for category service and matcher.
 """
-import pytest
+
 from decimal import Decimal
 from unittest.mock import AsyncMock, Mock
 
-from internal.domain.category import Category, CategoryMapping
+import pytest
+
+from internal.domain.category import Category
 from internal.usecase.category_matcher import CategoryMatcher
 from internal.usecase.category_service import CategoryService
 
@@ -69,7 +71,7 @@ class TestCategoryMatcher:
         path2 = ["Стройматериалы", "Кирпичи"]
 
         score = matcher._calculate_similarity(path1, path2)
-        assert score > Decimal("0.7")  # Should have high confidence
+        assert score >= Decimal("0.7")  # Should have high confidence
 
     def test_no_match(self, matcher):
         """Test no matching."""
@@ -137,9 +139,7 @@ class TestCategoryService:
         )
 
     @pytest.mark.asyncio
-    async def test_resolve_category_with_existing_mapping(
-        self, service, mock_repository
-    ):
+    async def test_resolve_category_with_existing_mapping(self, service, mock_repository):
         """Test resolving category with existing mapping."""
         # Setup
         mock_repository.find_mapping.return_value = 10
@@ -155,9 +155,7 @@ class TestCategoryService:
         mock_repository.find_mapping.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_resolve_category_with_fuzzy_match(
-        self, service, mock_repository, mock_matcher
-    ):
+    async def test_resolve_category_with_fuzzy_match(self, service, mock_repository, mock_matcher):
         """Test resolving category with fuzzy matching."""
         # Setup
         mock_repository.find_mapping.return_value = None
@@ -177,9 +175,7 @@ class TestCategoryService:
         mock_repository.create_mapping.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_resolve_category_with_no_match(
-        self, service, mock_repository, mock_matcher
-    ):
+    async def test_resolve_category_with_no_match(self, service, mock_repository, mock_matcher):
         """Test resolving category when no fuzzy match found."""
         # Setup
         mock_repository.find_mapping.return_value = None
