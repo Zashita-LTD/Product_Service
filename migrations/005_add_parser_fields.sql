@@ -15,10 +15,6 @@ ADD COLUMN IF NOT EXISTS schema_org_data JSONB;
 ALTER TABLE product_families 
 ADD CONSTRAINT unique_source_url UNIQUE (source_url);
 
--- Index for fast duplicate checking
-CREATE INDEX IF NOT EXISTS idx_product_families_source_url 
-ON product_families(source_url) WHERE source_url IS NOT NULL;
-
 -- Indexes for filtering and searching
 CREATE INDEX IF NOT EXISTS idx_product_families_brand 
 ON product_families(brand) WHERE brand IS NOT NULL;

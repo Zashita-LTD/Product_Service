@@ -177,7 +177,7 @@ class PostgresProductRepository:
                     sku,
                     brand,
                     description,
-                    json.dumps(schema_org_data) if schema_org_data else None,
+                    self._serialize_json(schema_org_data) if schema_org_data else None,
                 )
 
                 # Insert attributes if provided
@@ -403,6 +403,24 @@ class PostgresProductRepository:
             created_at=row["created_at"],
             processed_at=row["processed_at"],
         )
+
+    def _serialize_json(self, data: dict) -> str:
+        """
+        Safely serialize data to JSON.
+
+        Args:
+            data: Data to serialize.
+
+        Returns:
+            JSON string.
+
+        Raises:
+            TypeError: If data contains non-serializable objects.
+        """
+        try:
+            return json.dumps(data)
+        except (TypeError, ValueError) as e:
+            raise TypeError(f"Failed to serialize data to JSON: {e}") from e
 
 
 async def create_pool(dsn: str, min_size: int = 10, max_size: int = 50) -> Pool:

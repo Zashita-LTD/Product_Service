@@ -171,14 +171,17 @@ class RawProductImportHandler:
     def __init__(
         self,
         repository: PostgresProductRepository,
+        default_category_id: int = 1,
     ) -> None:
         """
         Initialize the handler.
 
         Args:
             repository: PostgresProductRepository instance.
+            default_category_id: Default category ID for uncategorized products.
         """
         self._repository = repository
+        self._default_category_id = default_category_id
 
     async def handle(self, raw_product: dict) -> str:
         """
@@ -264,12 +267,12 @@ class RawProductImportHandler:
             Category ID.
         """
         # TODO: Implement actual category mapping
-        # For now, return a default category ID
+        # For now, return the configured default category ID
         if category_path:
             logger.debug("Category path", path=category_path)
 
-        # Default category for uncategorized products
-        return 1
+        # Return configured default category for uncategorized products
+        return self._default_category_id
 
     async def _create_product(
         self,

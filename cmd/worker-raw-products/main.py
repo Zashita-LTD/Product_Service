@@ -41,6 +41,7 @@ DATABASE_URL = os.getenv(
 KAFKA_BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
 KAFKA_GROUP_ID = os.getenv("KAFKA_GROUP_ID", "product-service-raw-consumer")
 KAFKA_RAW_PRODUCTS_TOPIC = os.getenv("KAFKA_RAW_PRODUCTS_TOPIC", "raw-products")
+DEFAULT_CATEGORY_ID = int(os.getenv("DEFAULT_CATEGORY_ID", "1"))
 
 
 class RawProductsWorker:
@@ -74,7 +75,9 @@ class RawProductsWorker:
         repository = PostgresProductRepository(self._db_pool)
 
         # Create import handler
-        handler = RawProductImportHandler(repository=repository)
+        handler = RawProductImportHandler(
+            repository=repository, default_category_id=DEFAULT_CATEGORY_ID
+        )
 
         # Initialize Kafka consumer
         self._consumer = RawProductConsumer(
@@ -119,19 +122,33 @@ class RawProductsWorker:
 async def main() -> None:
     """Main entry point."""
     worker = RawProductsWorker()
+    shutdown_event = asyncio.Event()
 
     # Handle shutdown signals
-    loop = asyncio.get_event_loop()
-
     def signal_handler() -> None:
         logger.info("Received shutdown signal")
-        asyncio.create_task(worker.stop())
+        shutdown_event.set()
 
+    loop = asyncio.get_event_loop()
     for sig in (signal.SIGTERM, signal.SIGINT):
         loop.add_signal_handler(sig, signal_handler)
 
     try:
-        await worker.start()
+        # Start worker in a task
+        worker_task = asyncio.create_task(worker.start())
+
+        # Wait for shutdown signal
+        await shutdown_event.wait()
+
+        # Cancel worker task
+        worker_task.cancel()
+        try:
+            await worker_task
+        except asyncio.CancelledError:
+            pass
+
+        # Graceful shutdown
+        await worker.stop()
     except Exception as e:
         logger.error("Worker failed", error=str(e))
         await worker.stop()

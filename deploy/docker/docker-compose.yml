@@ -167,6 +167,7 @@ services:
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       KAFKA_GROUP_ID: product-service-raw-consumer
       KAFKA_RAW_PRODUCTS_TOPIC: raw-products
+      DEFAULT_CATEGORY_ID: ${DEFAULT_CATEGORY_ID:-1}
       LOG_LEVEL: INFO
       LOG_FORMAT: json
     networks:
