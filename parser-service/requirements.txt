@@ -1,0 +1,19 @@
+# Parser Service - Dependencies
+
+# Web Scraping
+playwright==1.40.0
+beautifulsoup4==4.12.3
+lxml==5.1.0
+
+# Message Queue
+aiokafka==0.10.0
+
+# Data Validation
+pydantic==2.5.3
+pydantic-settings==2.1.0
+
+# Configuration
+python-dotenv==1.0.0
+
+# HTTP (for model validation)
+httpx==0.26.0

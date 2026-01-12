@@ -1,0 +1,11 @@
+# Proxy list for parser service
+# Format: http://user:pass@host:port or http://host:port
+# One proxy per line
+# Lines starting with # are comments
+
+# Example proxies (replace with real ones):
+# http://user:password@proxy1.example.com:8080
+# http://user:password@proxy2.example.com:8080
+# http://192.168.1.100:3128
+
+# If you don't have proxies, leave this file empty or delete these lines
