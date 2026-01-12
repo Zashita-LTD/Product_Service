@@ -5,10 +5,10 @@ Orchestrates multiple store parsers and publishes scraped data to Kafka.
 """
 
 import asyncio
-import signal
-from typing import List, Optional
 import json
+import signal
 import time
+from typing import List, Optional
 
 from dotenv import load_dotenv
 from playwright.async_api import async_playwright, Browser, BrowserContext

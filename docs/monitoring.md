@@ -260,6 +260,41 @@ rate(parser_products_extracted_total{status="success"}[5m]) / rate(parser_produc
 rate(parser_blocked_requests_total[5m])
 ```
 
+## Best Practices
+
+### Security
+
+**Метрики эндпоинт:**
+- В production окружении рекомендуется ограничить доступ к `/metrics` эндпоинту
+- Используйте network policies для доступа только из Prometheus
+- Рассмотрите добавление базовой аутентификации или IP whitelist
+- Пример nginx конфигурации для ограничения доступа:
+
+```nginx
+location /api/v1/products/metrics {
+    allow 10.0.0.0/8;  # Internal network
+    deny all;
+    proxy_pass http://product-service;
+}
+```
+
+### Мониторинг
+
+1. **Используйте правильные интервалы:**
+   - Scrape interval: 15-30 секунд для большинства метрик
+   - Evaluation interval: 15-30 секунд для правил алертинга
+   - Retention: минимум 15 дней для трендов
+
+2. **Оптимизируйте метрики:**
+   - Избегайте high-cardinality labels (user IDs, timestamps)
+   - Ограничьте количество уникальных label values
+   - Используйте recording rules для сложных запросов
+
+3. **Настройте алерты правильно:**
+   - Добавьте `for:` duration для избежания ложных срабатываний
+   - Используйте severity levels (critical, warning, info)
+   - Включайте контекст в annotations
+
 ## Полезные ссылки
 
 - [Prometheus Documentation](https://prometheus.io/docs/)
