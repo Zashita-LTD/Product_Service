@@ -8,7 +8,7 @@ Includes Outbox Pattern support for reliable event publishing.
 import json
 from datetime import datetime
 from decimal import Decimal
-from typing import Optional, List, Dict, Any, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 from uuid import UUID
 
 import asyncpg
@@ -490,7 +490,9 @@ class PostgresProductRepository:
         # Build JOIN clauses
         join_clauses = ""
         if min_price is not None or max_price is not None:
-            join_clauses += " LEFT JOIN prices p ON pf.uuid = p.product_family_uuid AND p.is_active = true"
+            join_clauses += (
+                " LEFT JOIN prices p ON pf.uuid = p.product_family_uuid AND p.is_active = true"
+            )
         if in_stock is not None and in_stock:
             join_clauses += " LEFT JOIN inventory i ON pf.uuid = i.product_family_uuid"
 
@@ -695,7 +697,9 @@ class PostgresProductRepository:
         # Build JOIN clauses
         join_clauses = ""
         if min_price is not None or max_price is not None:
-            join_clauses += " LEFT JOIN prices p ON pf.uuid = p.product_family_uuid AND p.is_active = true"
+            join_clauses += (
+                " LEFT JOIN prices p ON pf.uuid = p.product_family_uuid AND p.is_active = true"
+            )
         if in_stock is not None and in_stock:
             join_clauses += " LEFT JOIN inventory i ON pf.uuid = i.product_family_uuid"
 

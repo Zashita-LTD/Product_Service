@@ -3,6 +3,7 @@ Search Products Use Case.
 
 Implements full-text search for products with filtering.
 """
+
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Optional
@@ -10,14 +11,13 @@ from typing import Optional
 from internal.infrastructure.postgres.repository import PostgresProductRepository
 from pkg.logger.logger import get_logger
 
-
 logger = get_logger(__name__)
 
 
 @dataclass
 class SearchProductsInput:
     """Input for SearchProductsUseCase."""
-    
+
     query: str
     category_id: Optional[int] = None
     brand: Optional[str] = None
@@ -33,7 +33,7 @@ class SearchProductsInput:
 @dataclass
 class SearchProductsOutput:
     """Output for SearchProductsUseCase."""
-    
+
     products: list[dict]
     total: int
     page: int
@@ -43,26 +43,26 @@ class SearchProductsOutput:
 class SearchProductsUseCase:
     """
     Use case for full-text search of products.
-    
+
     Performs PostgreSQL full-text search with filtering and pagination.
     """
-    
+
     def __init__(self, repository: PostgresProductRepository):
         """
         Initialize the use case.
-        
+
         Args:
             repository: Product repository.
         """
         self._repository = repository
-    
+
     async def execute(self, input_data: SearchProductsInput) -> SearchProductsOutput:
         """
         Execute the search use case.
-        
+
         Args:
             input_data: Search input with query and filters.
-            
+
         Returns:
             Search results with pagination.
         """
@@ -72,9 +72,9 @@ class SearchProductsUseCase:
             category_id=input_data.category_id,
             page=input_data.page,
         )
-        
+
         offset = (input_data.page - 1) * input_data.per_page
-        
+
         products, total = await self._repository.search(
             query=input_data.query,
             category_id=input_data.category_id,
@@ -87,14 +87,14 @@ class SearchProductsUseCase:
             offset=offset,
             limit=input_data.per_page,
         )
-        
+
         logger.info(
             "Search completed",
             query=input_data.query,
             total=total,
             returned=len(products),
         )
-        
+
         return SearchProductsOutput(
             products=products,
             total=total,
