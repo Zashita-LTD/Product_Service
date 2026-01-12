@@ -4,6 +4,7 @@ PostgreSQL Product Repository.
 Implements the repository pattern for Product Family persistence with asyncpg.
 Includes Outbox Pattern support for reliable event publishing.
 """
+
 import json
 from datetime import datetime
 from decimal import Decimal
@@ -11,9 +12,9 @@ from typing import Optional
 from uuid import UUID
 
 import asyncpg
-from asyncpg import Pool, Connection
+from asyncpg import Pool
 
-from internal.domain.product import ProductFamily, OutboxEvent
+from internal.domain.product import OutboxEvent, ProductFamily
 from internal.domain.value_objects import QualityScore
 
 
@@ -86,12 +87,12 @@ class PostgresProductRepository:
 
             return self._row_to_entity(row)
 
-    async def get_by_source_url(self, source_url: str) -> Optional[ProductFamily]:
+    async def find_by_source_url(self, source_url: str) -> Optional[ProductFamily]:
         """
-        Get a product family by source URL (scraped origin).
+        Find a product family by source URL (for deduplication).
 
         Args:
-            source_url: The URL from where the product was scraped.
+            source_url: The source URL from the parser.
 
         Returns:
             ProductFamily if found, None otherwise.
@@ -116,16 +117,37 @@ class PostgresProductRepository:
         self,
         product: ProductFamily,
         event: OutboxEvent,
+        source_url: Optional[str] = None,
+        source_name: Optional[str] = None,
+        external_id: Optional[str] = None,
+        sku: Optional[str] = None,
+        brand: Optional[str] = None,
+        description: Optional[str] = None,
+        schema_org_data: Optional[dict] = None,
+        attributes: Optional[list[dict]] = None,
+        documents: Optional[list[dict]] = None,
+        images: Optional[list[dict]] = None,
     ) -> ProductFamily:
         """
         Create a product family with an outbox event atomically.
 
         Implements the Outbox Pattern for reliable event publishing.
         Both the product and the event are created in a single transaction.
+        Optionally creates related attributes, documents, and images.
 
         Args:
             product: The product family to create.
             event: The outbox event to create.
+            source_url: Original URL from parser.
+            source_name: Name of the source.
+            external_id: External ID from source system.
+            sku: Stock Keeping Unit.
+            brand: Brand/manufacturer name.
+            description: Product description.
+            schema_org_data: Schema.org structured data.
+            attributes: List of attribute dicts (name, value, unit).
+            documents: List of document dicts (document_type, title, url, format).
+            images: List of image dicts (url, alt_text, is_main, sort_order).
 
         Returns:
             The created product family.
@@ -137,8 +159,10 @@ class PostgresProductRepository:
                     """
                     INSERT INTO product_families (
                         uuid, name_technical, category_id, quality_score,
-                        enrichment_status, created_at, updated_at
-                    ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+                        enrichment_status, created_at, updated_at,
+                        source_url, source_name, external_id, sku, brand,
+                        description, schema_org_data
+                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
                     """,
                     product.uuid,
                     product.name_technical,
@@ -147,7 +171,61 @@ class PostgresProductRepository:
                     product.enrichment_status,
                     product.created_at,
                     product.updated_at,
+                    source_url,
+                    source_name,
+                    external_id,
+                    sku,
+                    brand,
+                    description,
+                    self._serialize_json(schema_org_data) if schema_org_data else None,
                 )
+
+                # Insert attributes if provided
+                if attributes:
+                    for attr in attributes:
+                        await conn.execute(
+                            """
+                            INSERT INTO product_attributes (
+                                product_uuid, name, value, unit
+                            ) VALUES ($1, $2, $3, $4)
+                            """,
+                            product.uuid,
+                            attr.get("name"),
+                            attr.get("value"),
+                            attr.get("unit"),
+                        )
+
+                # Insert documents if provided
+                if documents:
+                    for doc in documents:
+                        await conn.execute(
+                            """
+                            INSERT INTO product_documents (
+                                product_uuid, document_type, title, url, format
+                            ) VALUES ($1, $2, $3, $4, $5)
+                            """,
+                            product.uuid,
+                            doc.get("document_type"),
+                            doc.get("title"),
+                            doc.get("url"),
+                            doc.get("format"),
+                        )
+
+                # Insert images if provided
+                if images:
+                    for img in images:
+                        await conn.execute(
+                            """
+                            INSERT INTO product_images (
+                                product_uuid, url, alt_text, is_main, sort_order
+                            ) VALUES ($1, $2, $3, $4, $5)
+                            """,
+                            product.uuid,
+                            img.get("url"),
+                            img.get("alt_text"),
+                            img.get("is_main", False),
+                            img.get("sort_order", 0),
+                        )
 
                 # Insert outbox event
                 await conn.execute(
@@ -325,6 +403,24 @@ class PostgresProductRepository:
             created_at=row["created_at"],
             processed_at=row["processed_at"],
         )
+
+    def _serialize_json(self, data: dict) -> str:
+        """
+        Safely serialize data to JSON.
+
+        Args:
+            data: Data to serialize.
+
+        Returns:
+            JSON string.
+
+        Raises:
+            TypeError: If data contains non-serializable objects.
+        """
+        try:
+            return json.dumps(data)
+        except (TypeError, ValueError) as e:
+            raise TypeError(f"Failed to serialize data to JSON: {e}") from e
 
 
 async def create_pool(dsn: str, min_size: int = 10, max_size: int = 50) -> Pool:

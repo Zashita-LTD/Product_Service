@@ -150,29 +150,29 @@ services:
     networks:
       - backend
 
-  # Raw Products Worker (ingestion from parser-service)
+  # Raw Products Import Worker
   worker-raw-products:
     build:
       context: ../..
-      dockerfile: deploy/docker/Dockerfile.worker-raw
+      dockerfile: deploy/docker/Dockerfile.worker
     container_name: product-service-worker-raw
+    command: ["python", "-m", "cmd.worker-raw-products.main"]
     depends_on:
       postgres:
-        condition: service_healthy
-      redis:
         condition: service_healthy
       kafka:
         condition: service_healthy
     environment:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/product_service
-      REDIS_URL: redis://redis:6379/0
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
-      KAFKA_RAW_GROUP_ID: raw-products-worker
-      KAFKA_RAW_TOPICS: raw-products
+      KAFKA_GROUP_ID: product-service-raw-consumer
+      KAFKA_RAW_PRODUCTS_TOPIC: raw-products
+      DEFAULT_CATEGORY_ID: ${DEFAULT_CATEGORY_ID:-1}
       LOG_LEVEL: INFO
       LOG_FORMAT: json
     networks:
       - backend
+    restart: unless-stopped
 
 networks:
   backend:

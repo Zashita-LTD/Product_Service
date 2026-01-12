@@ -11,6 +11,7 @@ product-service/
 ├── cmd/                    # Точки входа приложений
 │   ├── api/               # REST API сервер (FastAPI)
 │   ├── worker-enrichment/ # AI воркер (Gemini)
+│   ├── worker-raw-products/ # Импорт товаров от Parser Service
 │   ├── worker-sync/       # Sync воркер (Meilisearch)
 │   └── migrator/          # DB миграции
 ├── internal/              # Внутренняя логика
@@ -53,6 +54,30 @@ Redis кэширование с защитой от cache stampede:
 - TTL = 600 + random(0, 120) секунд
 - Формат ключей: `product:fam:{uuid}:full`
 - Сериализация: msgpack
+
+### 4. Raw Products Import Worker
+Автоматический импорт товаров от Parser Service:
+- Чтение из Kafka топика `raw-products`
+- Дедупликация по `source_url`
+- Транзакционное создание товара с атрибутами, документами и изображениями
+- Автоматический запуск AI-обогащения через Outbox Pattern
+- Статистика: imported/duplicates/errors
+
+```python
+# Проверка дубликата
+existing = await repository.find_by_source_url(source_url)
+if existing:
+    return "duplicate"
+
+# Создание товара с атрибутами и документами в одной транзакции
+await repository.create_with_outbox(
+    product=product,
+    event=enrichment_event,
+    attributes=raw_product["attributes"],
+    documents=raw_product["documents"],
+    images=raw_product["images"],
+)
+```
 
 ## 🛠️ Технологический стек
 
@@ -207,6 +232,8 @@ make coverage
 | `DATABASE_URL` | PostgreSQL connection string | - |
 | `REDIS_URL` | Redis connection URL | redis://localhost:6379/0 |
 | `KAFKA_BOOTSTRAP_SERVERS` | Kafka brokers | localhost:9092 |
+| `KAFKA_RAW_PRODUCTS_TOPIC` | Топик для импорта товаров | raw-products |
+| `DEFAULT_CATEGORY_ID` | ID категории по умолчанию | 1 |
 | `VERTEX_PROJECT_ID` | Google Cloud project ID | - |
 | `LOG_LEVEL` | Уровень логирования | INFO |
 
