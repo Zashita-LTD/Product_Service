@@ -4,11 +4,9 @@ Google Vertex AI Client.
 Implements AI enrichment with Circuit Breaker pattern for resilience.
 """
 from decimal import Decimal
-from typing import Optional, Any
 
 from circuitbreaker import circuit, CircuitBreakerError
 from google.cloud import aiplatform
-from google.cloud.aiplatform.gapic.schema import predict
 
 from pkg.logger.logger import get_logger
 
@@ -24,19 +22,19 @@ RECOVERY_TIMEOUT = 60
 class VertexAIClient:
     """
     Google Vertex AI client for product enrichment.
-    
+
     Implements Circuit Breaker pattern to handle AI API failures gracefully.
     """
-    
+
     def __init__(
         self,
         project_id: str,
         location: str = "us-central1",
-        model_id: str = "gemini-1.5-flash",
+        model_id: str = "gemini-2.0-flash-001",
     ) -> None:
         """
         Initialize the Vertex AI client.
-        
+
         Args:
             project_id: Google Cloud project ID.
             location: Vertex AI location.
@@ -46,7 +44,7 @@ class VertexAIClient:
         self._location = location
         self._model_id = model_id
         self._initialized = False
-    
+
     async def initialize(self) -> None:
         """Initialize the Vertex AI client."""
         aiplatform.init(
@@ -59,7 +57,7 @@ class VertexAIClient:
             project=self._project_id,
             location=self._location,
         )
-    
+
     @circuit(
         failure_threshold=FAILURE_THRESHOLD,
         recovery_timeout=RECOVERY_TIMEOUT,
@@ -71,32 +69,32 @@ class VertexAIClient:
     ) -> Decimal:
         """
         Calculate quality score for a product using AI.
-        
+
         Uses Google Gemini to analyze product information and calculate
         a quality score based on various factors.
-        
+
         This method is protected by a Circuit Breaker:
         - Opens after 5 consecutive failures
         - Recovers after 60 seconds
-        
+
         Args:
             name_technical: Technical name of the product.
             category_id: Category identifier.
-            
+
         Returns:
             Quality score as Decimal (0.00 - 1.00).
-            
+
         Raises:
             CircuitBreakerError: If circuit is open due to failures.
         """
         if not self._initialized:
             await self.initialize()
-        
+
         prompt = self._build_quality_prompt(name_technical, category_id)
-        
+
         try:
             from vertexai.generative_models import GenerativeModel
-            
+
             model = GenerativeModel(self._model_id)
             response = await model.generate_content_async(
                 prompt,
@@ -105,18 +103,18 @@ class VertexAIClient:
                     "max_output_tokens": 100,
                 },
             )
-            
+
             # Parse the response to extract quality score
             score = self._parse_quality_score(response.text)
-            
+
             logger.info(
                 "Quality score calculated",
                 name_technical=name_technical,
                 score=float(score),
             )
-            
+
             return score
-            
+
         except Exception as e:
             logger.error(
                 "Failed to calculate quality score",
@@ -124,7 +122,7 @@ class VertexAIClient:
                 error=str(e),
             )
             raise
-    
+
     def _build_quality_prompt(
         self,
         name_technical: str,
@@ -132,37 +130,37 @@ class VertexAIClient:
     ) -> str:
         """
         Build the prompt for quality score calculation.
-        
+
         Args:
             name_technical: Technical name of the product.
             category_id: Category identifier.
-            
+
         Returns:
             Formatted prompt string.
         """
         return f"""
         Analyze the following product and provide a quality score from 0.00 to 1.00.
-        
+
         Product Name: {name_technical}
         Category ID: {category_id}
-        
+
         Consider the following factors:
         1. Completeness of the product name
         2. Technical specifications present in the name
         3. Brand recognition (if detectable)
         4. Clarity and specificity
-        
+
         Respond with ONLY a decimal number between 0.00 and 1.00.
         Example response: 0.85
         """
-    
+
     def _parse_quality_score(self, response_text: str) -> Decimal:
         """
         Parse quality score from AI response.
-        
+
         Args:
             response_text: Raw response from AI.
-            
+
         Returns:
             Parsed quality score as Decimal.
         """
@@ -182,7 +180,7 @@ class VertexAIClient:
                 return Decimal(str(round(value, 2)))
         except (ValueError, AttributeError):
             pass
-        
+
         # Default score on parse failure
         logger.warning(
             "Could not parse quality score, using default",
@@ -194,10 +192,10 @@ class VertexAIClient:
 class VertexAIClientWithFallback(VertexAIClient):
     """
     Vertex AI client with fallback behavior.
-    
+
     Returns a default score when Circuit Breaker is open.
     """
-    
+
     async def calculate_quality_score(
         self,
         name_technical: str,
@@ -205,11 +203,11 @@ class VertexAIClientWithFallback(VertexAIClient):
     ) -> Decimal:
         """
         Calculate quality score with fallback.
-        
+
         Args:
             name_technical: Technical name of the product.
             category_id: Category identifier.
-            
+
         Returns:
             Quality score, or fallback score if AI is unavailable.
         """

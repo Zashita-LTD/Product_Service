@@ -3,9 +3,6 @@ Create Product Use Case.
 
 Implements the Outbox Pattern for reliable event publishing.
 """
-import json
-from datetime import datetime
-from decimal import Decimal
 from typing import Optional, Protocol
 from uuid import UUID
 
@@ -15,15 +12,15 @@ from internal.domain.errors import ProductAlreadyExistsError
 
 class ProductRepository(Protocol):
     """Protocol for product repository operations."""
-    
+
     async def get_by_uuid(self, uuid: UUID) -> Optional[ProductFamily]:
         """Get product by UUID."""
         ...
-    
+
     async def get_by_name(self, name_technical: str) -> Optional[ProductFamily]:
         """Get product by technical name."""
         ...
-    
+
     async def create_with_outbox(
         self,
         product: ProductFamily,
@@ -35,15 +32,19 @@ class ProductRepository(Protocol):
 
 class CacheService(Protocol):
     """Protocol for cache operations."""
-    
-    async def invalidate(self, key: str) -> None:
-        """Invalidate cache key."""
+
+    async def invalidate_product(self, uuid: str) -> bool:
+        """Invalidate cache for a product."""
+        ...
+
+    async def invalidate_category(self, category_id: int) -> int:
+        """Invalidate all cached products in a category."""
         ...
 
 
 class CreateProductInput:
     """Input DTO for creating a product."""
-    
+
     def __init__(
         self,
         name_technical: str,
@@ -52,7 +53,7 @@ class CreateProductInput:
     ) -> None:
         """
         Initialize create product input.
-        
+
         Args:
             name_technical: Technical name of the product.
             category_id: Category identifier.
@@ -65,16 +66,16 @@ class CreateProductInput:
 
 class CreateProductOutput:
     """Output DTO for created product."""
-    
+
     def __init__(self, product: ProductFamily) -> None:
         """
         Initialize create product output.
-        
+
         Args:
             product: The created product family.
         """
         self.product = product
-    
+
     def to_dict(self) -> dict:
         """Convert to dictionary representation."""
         return self.product.to_dict()
@@ -83,11 +84,11 @@ class CreateProductOutput:
 class CreateProductUseCase:
     """
     Use case for creating a new product family.
-    
+
     Implements the Outbox Pattern to ensure reliable event publishing.
     The product and outbox event are created in a single database transaction.
     """
-    
+
     def __init__(
         self,
         repository: ProductRepository,
@@ -95,30 +96,30 @@ class CreateProductUseCase:
     ) -> None:
         """
         Initialize the use case.
-        
+
         Args:
             repository: Product repository for persistence.
             cache: Optional cache service for invalidation.
         """
         self._repository = repository
         self._cache = cache
-    
+
     async def execute(self, input_dto: CreateProductInput) -> CreateProductOutput:
         """
         Execute the create product use case.
-        
+
         This method:
         1. Validates the input
         2. Checks for duplicate products
         3. Creates the product and outbox event atomically
         4. Invalidates relevant cache entries
-        
+
         Args:
             input_dto: Input data for creating the product.
-            
+
         Returns:
             CreateProductOutput with the created product.
-            
+
         Raises:
             ProductAlreadyExistsError: If product with same name exists.
             DomainValidationError: If input validation fails.
@@ -127,14 +128,14 @@ class CreateProductUseCase:
         existing = await self._repository.get_by_name(input_dto.name_technical)
         if existing:
             raise ProductAlreadyExistsError(input_dto.name_technical)
-        
+
         # Create domain entity
         product = ProductFamily(
             name_technical=input_dto.name_technical,
             category_id=input_dto.category_id,
             enrichment_status="pending",
         )
-        
+
         # Create outbox event for reliable publishing
         outbox_event = OutboxEvent(
             aggregate_type="product_family",
@@ -147,16 +148,16 @@ class CreateProductUseCase:
                 "created_at": product.created_at.isoformat(),
             },
         )
-        
+
         # Persist atomically using Outbox Pattern
         created_product = await self._repository.create_with_outbox(
             product=product,
             event=outbox_event,
         )
-        
+
         # Invalidate cache if service is available
         if self._cache:
-            await self._cache.invalidate(f"product:fam:{product.uuid}:full")
-            await self._cache.invalidate(f"product:category:{product.category_id}:list")
-        
+            await self._cache.invalidate_product(str(product.uuid))
+            await self._cache.invalidate_category(product.category_id)
+
         return CreateProductOutput(product=created_product)
