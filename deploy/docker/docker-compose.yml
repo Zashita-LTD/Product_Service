@@ -150,6 +150,29 @@ services:
     networks:
       - backend
 
+  # Raw Products Import Worker
+  worker-raw-products:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile.worker
+    container_name: product-service-worker-raw
+    command: ["python", "-m", "cmd.worker-raw-products.main"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/product_service
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      KAFKA_GROUP_ID: product-service-raw-consumer
+      KAFKA_RAW_PRODUCTS_TOPIC: raw-products
+      LOG_LEVEL: INFO
+      LOG_FORMAT: json
+    networks:
+      - backend
+    restart: unless-stopped
+
 networks:
   backend:
     driver: bridge

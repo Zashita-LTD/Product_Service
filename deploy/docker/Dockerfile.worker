@@ -35,6 +35,7 @@ ENV PATH=/root/.local/bin:$PATH
 COPY internal/ ./internal/
 COPY pkg/ ./pkg/
 COPY cmd/worker-enrichment/ ./cmd/worker-enrichment/
+COPY cmd/worker-raw-products/ ./cmd/worker-raw-products/
 
 # Set Python path
 ENV PYTHONPATH=/app
