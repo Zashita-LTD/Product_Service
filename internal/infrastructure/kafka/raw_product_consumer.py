@@ -3,18 +3,17 @@ Kafka Consumer for raw products from Parser Service.
 
 Reads messages from the 'raw-products' topic and imports them into the database.
 """
-import asyncio
+
 import json
-from typing import Optional, Any
+from typing import Any, Optional
 from uuid import uuid4
 
 from aiokafka import AIOKafkaConsumer
 from aiokafka.errors import KafkaError
 
-from internal.domain.product import ProductFamily, OutboxEvent
+from internal.domain.product import OutboxEvent, ProductFamily
 from internal.infrastructure.postgres.repository import PostgresProductRepository
 from pkg.logger.logger import get_logger
-
 
 logger = get_logger(__name__)
 
@@ -22,10 +21,10 @@ logger = get_logger(__name__)
 class RawProductConsumer:
     """
     Kafka consumer for the raw-products topic from Parser Service.
-    
+
     Handles deserialization and reliable processing of raw product data.
     """
-    
+
     def __init__(
         self,
         bootstrap_servers: str,
@@ -34,7 +33,7 @@ class RawProductConsumer:
     ) -> None:
         """
         Initialize the raw products consumer.
-        
+
         Args:
             bootstrap_servers: Comma-separated list of Kafka brokers.
             group_id: Consumer group identifier.
@@ -46,7 +45,7 @@ class RawProductConsumer:
         self._consumer: Optional[AIOKafkaConsumer] = None
         self._handler: Optional["RawProductImportHandler"] = None
         self._running = False
-        
+
         # Statistics
         self._stats = {
             "imported": 0,
@@ -54,16 +53,16 @@ class RawProductConsumer:
             "errors": 0,
             "total_processed": 0,
         }
-    
+
     def set_handler(self, handler: "RawProductImportHandler") -> None:
         """
         Set the import handler.
-        
+
         Args:
             handler: RawProductImportHandler instance.
         """
         self._handler = handler
-    
+
     async def start(self) -> None:
         """Start the Kafka consumer."""
         self._consumer = AIOKafkaConsumer(
@@ -82,34 +81,34 @@ class RawProductConsumer:
             topic=self._topic,
             group_id=self._group_id,
         )
-    
+
     async def stop(self) -> None:
         """Stop the Kafka consumer."""
         self._running = False
         if self._consumer:
             await self._consumer.stop()
             logger.info("Raw products consumer stopped", stats=self._stats)
-    
+
     async def consume(self) -> None:
         """
         Start consuming messages.
-        
+
         This is a blocking method that runs until stop() is called.
         """
         if not self._consumer:
             raise RuntimeError("Consumer not started")
-        
+
         if not self._handler:
             raise RuntimeError("Handler not set")
-        
+
         try:
             async for msg in self._consumer:
                 if not self._running:
                     break
-                
+
                 try:
                     result = await self._process_message(msg)
-                    
+
                     # Update statistics
                     self._stats["total_processed"] += 1
                     if result == "imported":
@@ -118,14 +117,11 @@ class RawProductConsumer:
                         self._stats["duplicates"] += 1
                     elif result == "error":
                         self._stats["errors"] += 1
-                    
+
                     # Log progress every 100 products
                     if self._stats["total_processed"] % 100 == 0:
-                        logger.info(
-                            "Import progress",
-                            **self._stats
-                        )
-                    
+                        logger.info("Import progress", **self._stats)
+
                     await self._consumer.commit()
                 except Exception as e:
                     logger.error(
@@ -141,19 +137,19 @@ class RawProductConsumer:
         except KafkaError as e:
             logger.error("Kafka consumer error", error=str(e))
             raise
-    
+
     async def _process_message(self, msg: Any) -> str:
         """
         Process a single Kafka message.
-        
+
         Args:
             msg: Kafka message to process.
-            
+
         Returns:
             "imported", "duplicate", or "error"
         """
         value = msg.value
-        
+
         logger.debug(
             "Received raw product",
             topic=msg.topic,
@@ -161,53 +157,53 @@ class RawProductConsumer:
             offset=msg.offset,
             source_url=value.get("source_url"),
         )
-        
+
         return await self._handler.handle(value)
 
 
 class RawProductImportHandler:
     """
     Handler for importing raw products into the database.
-    
+
     Handles deduplication, category resolution, and product creation.
     """
-    
+
     def __init__(
         self,
         repository: PostgresProductRepository,
     ) -> None:
         """
         Initialize the handler.
-        
+
         Args:
             repository: PostgresProductRepository instance.
         """
         self._repository = repository
-    
+
     async def handle(self, raw_product: dict) -> str:
         """
         Handle a raw product import.
-        
+
         Args:
             raw_product: Raw product data from parser.
-            
+
         Returns:
             "imported" - product created
             "duplicate" - already exists
             "error" - import failed
         """
         source_url = raw_product.get("source_url")
-        
+
         # 1. Validate required fields
         if not source_url:
             logger.warning("Missing source_url, skipping", raw_product=raw_product)
             return "error"
-        
+
         name_original = raw_product.get("name_original")
         if not name_original:
             logger.warning("Missing name_original, skipping", source_url=source_url)
             return "error"
-        
+
         # 2. Check for duplicate by source_url
         try:
             existing = await self._repository.find_by_source_url(source_url)
@@ -217,10 +213,10 @@ class RawProductImportHandler:
         except Exception as e:
             logger.error("Error checking duplicate", source_url=source_url, error=str(e))
             return "error"
-        
+
         # 3. Resolve category from breadcrumbs
         category_id = await self._resolve_category(raw_product.get("category_path", []))
-        
+
         # 4. Create product with all related data
         try:
             product = await self._create_product(
@@ -237,14 +233,14 @@ class RawProductImportHandler:
                 images=raw_product.get("images", []),
                 schema_org_data=raw_product.get("schema_org_data"),
             )
-            
+
             logger.info(
                 "Product imported successfully",
                 product_uuid=product.uuid,
                 name=product.name_technical,
                 source_url=source_url,
             )
-            
+
             return "imported"
         except Exception as e:
             logger.error(
@@ -253,17 +249,17 @@ class RawProductImportHandler:
                 error=str(e),
             )
             return "error"
-    
+
     async def _resolve_category(self, category_path: list[str]) -> int:
         """
         Resolve category ID from category breadcrumbs.
-        
+
         For now, returns a default category ID.
         In production, this should map category paths to actual category IDs.
-        
+
         Args:
             category_path: List of category names (breadcrumbs).
-            
+
         Returns:
             Category ID.
         """
@@ -271,10 +267,10 @@ class RawProductImportHandler:
         # For now, return a default category ID
         if category_path:
             logger.debug("Category path", path=category_path)
-        
+
         # Default category for uncategorized products
         return 1
-    
+
     async def _create_product(
         self,
         name_technical: str,
@@ -292,7 +288,7 @@ class RawProductImportHandler:
     ) -> ProductFamily:
         """
         Create a product with all related data.
-        
+
         Args:
             name_technical: Technical name of the product.
             category_id: Category identifier.
@@ -306,7 +302,7 @@ class RawProductImportHandler:
             documents: List of documents.
             images: List of images.
             schema_org_data: Schema.org structured data.
-            
+
         Returns:
             Created ProductFamily.
         """
@@ -317,7 +313,7 @@ class RawProductImportHandler:
             category_id=category_id,
             enrichment_status="pending",
         )
-        
+
         # Create outbox event for AI enrichment
         event = OutboxEvent(
             aggregate_type="product_family",
@@ -330,7 +326,7 @@ class RawProductImportHandler:
                 "source": "parser",
             },
         )
-        
+
         # Create product with all related data in a single transaction
         await self._repository.create_with_outbox(
             product=product,
@@ -346,5 +342,5 @@ class RawProductImportHandler:
             documents=documents,
             images=images,
         )
-        
+
         return product
