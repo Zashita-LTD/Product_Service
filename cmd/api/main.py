@@ -22,6 +22,7 @@ from internal.infrastructure.redis.cache import RedisCache, ProductCacheService
 from internal.infrastructure.ai_provider.vertex_client import VertexAIClientWithFallback
 from internal.usecase.create_product import CreateProductUseCase
 from internal.usecase.enrich_product import EnrichProductUseCase
+from internal.usecase.search_products import SearchProductsUseCase
 from pkg.logger.logger import setup_logging, get_logger, set_request_id
 
 
@@ -110,11 +111,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         ai_provider=ai_client,
         cache=cache_service,
     )
+    search_use_case = SearchProductsUseCase(
+        repository=repository,
+    )
     
     # Set dependencies for handlers
     set_dependencies(
         create_use_case=create_use_case,
         enrich_use_case=enrich_use_case,
+        search_use_case=search_use_case,
         repository=repository,
     )
     

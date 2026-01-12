@@ -8,7 +8,7 @@ Includes Outbox Pattern support for reliable event publishing.
 import json
 from datetime import datetime
 from decimal import Decimal
-from typing import Optional
+from typing import Optional, List, Dict, Any, Tuple
 from uuid import UUID
 
 import asyncpg
@@ -403,6 +403,338 @@ class PostgresProductRepository:
             created_at=row["created_at"],
             processed_at=row["processed_at"],
         )
+
+    async def list_products(
+        self,
+        category_id: Optional[int] = None,
+        brand: Optional[str] = None,
+        source_name: Optional[str] = None,
+        min_price: Optional[Decimal] = None,
+        max_price: Optional[Decimal] = None,
+        in_stock: Optional[bool] = None,
+        enrichment_status: Optional[str] = None,
+        offset: int = 0,
+        limit: int = 20,
+        sort_by: str = "created_at",
+        sort_order: str = "desc",
+    ) -> tuple[list[dict], int]:
+        """
+        List products with filters and pagination.
+
+        Args:
+            category_id: Filter by category.
+            brand: Filter by brand.
+            source_name: Filter by source.
+            min_price: Minimum price filter.
+            max_price: Maximum price filter.
+            in_stock: Filter by stock availability.
+            enrichment_status: Filter by enrichment status.
+            offset: Number of results to skip.
+            limit: Maximum number of results.
+            sort_by: Field to sort by.
+            sort_order: Sort order (asc/desc).
+
+        Returns:
+            Tuple of (list of product dicts, total count).
+        """
+        # Build WHERE clause dynamically
+        conditions = []
+        params = []
+        param_num = 1
+
+        if category_id is not None:
+            conditions.append(f"pf.category_id = ${param_num}")
+            params.append(category_id)
+            param_num += 1
+
+        if brand is not None:
+            conditions.append(f"pf.brand = ${param_num}")
+            params.append(brand)
+            param_num += 1
+
+        if source_name is not None:
+            conditions.append(f"pf.source_name = ${param_num}")
+            params.append(source_name)
+            param_num += 1
+
+        if enrichment_status is not None:
+            conditions.append(f"pf.enrichment_status = ${param_num}")
+            params.append(enrichment_status)
+            param_num += 1
+
+        if min_price is not None or max_price is not None:
+            # Join with prices table for price filtering
+            price_conditions = []
+            if min_price is not None:
+                price_conditions.append(f"p.amount >= ${param_num}")
+                params.append(float(min_price))
+                param_num += 1
+            if max_price is not None:
+                price_conditions.append(f"p.amount <= ${param_num}")
+                params.append(float(max_price))
+                param_num += 1
+            conditions.extend(price_conditions)
+
+        if in_stock is not None and in_stock:
+            conditions.append("i.quantity > 0")
+
+        where_clause = " AND ".join(conditions) if conditions else "1=1"
+
+        # Validate sort_by to prevent SQL injection
+        valid_sort_fields = ["created_at", "updated_at", "name_technical", "quality_score"]
+        if sort_by not in valid_sort_fields:
+            sort_by = "created_at"
+
+        sort_order = "DESC" if sort_order.lower() == "desc" else "ASC"
+
+        # Build JOIN clauses
+        join_clauses = ""
+        if min_price is not None or max_price is not None:
+            join_clauses += " LEFT JOIN prices p ON pf.uuid = p.product_family_uuid AND p.is_active = true"
+        if in_stock is not None and in_stock:
+            join_clauses += " LEFT JOIN inventory i ON pf.uuid = i.product_family_uuid"
+
+        # Query for products
+        query = f"""
+            SELECT DISTINCT
+                pf.uuid, pf.name_technical, pf.brand, pf.sku, pf.category_id,
+                pf.source_name, pf.enrichment_status, pf.quality_score,
+                pf.created_at, pf.updated_at, pf.external_id, pf.source_url
+            FROM product_families pf
+            {join_clauses}
+            WHERE {where_clause}
+            ORDER BY pf.{sort_by} {sort_order}
+            LIMIT ${param_num} OFFSET ${param_num + 1}
+        """
+
+        params.extend([limit, offset])
+
+        # Count query
+        count_query = f"""
+            SELECT COUNT(DISTINCT pf.uuid)
+            FROM product_families pf
+            {join_clauses}
+            WHERE {where_clause}
+        """
+
+        async with self._pool.acquire() as conn:
+            rows = await conn.fetch(query, *params[:-2])
+            count_row = await conn.fetchval(count_query, *params[:-2])
+
+            products = []
+            for row in rows:
+                product_dict = dict(row)
+                products.append(product_dict)
+
+            return products, count_row or 0
+
+    async def get_product_with_details(self, uuid: UUID) -> Optional[dict]:
+        """
+        Get a product with all related data (attributes, images, documents).
+
+        Args:
+            uuid: The UUID of the product family.
+
+        Returns:
+            Dict with product and all related data, or None if not found.
+        """
+        async with self._pool.acquire() as conn:
+            # Get product family
+            product_row = await conn.fetchrow(
+                """
+                SELECT uuid, name_technical, category_id, quality_score,
+                       enrichment_status, created_at, updated_at, brand,
+                       sku, description, source_name, source_url, external_id
+                FROM product_families
+                WHERE uuid = $1
+                """,
+                uuid,
+            )
+
+            if not product_row:
+                return None
+
+            # Get attributes
+            attributes = await conn.fetch(
+                """
+                SELECT name, value, unit
+                FROM product_attributes
+                WHERE product_uuid = $1
+                ORDER BY name
+                """,
+                uuid,
+            )
+
+            # Get images
+            images = await conn.fetch(
+                """
+                SELECT url, alt_text, is_main, sort_order
+                FROM product_images
+                WHERE product_uuid = $1
+                ORDER BY sort_order, is_main DESC
+                """,
+                uuid,
+            )
+
+            # Get documents
+            documents = await conn.fetch(
+                """
+                SELECT document_type, title, url, format
+                FROM product_documents
+                WHERE product_uuid = $1
+                ORDER BY document_type
+                """,
+                uuid,
+            )
+
+            # Get active price
+            price_row = await conn.fetchrow(
+                """
+                SELECT amount, currency
+                FROM prices
+                WHERE product_family_uuid = $1 AND is_active = true
+                ORDER BY created_at DESC
+                LIMIT 1
+                """,
+                uuid,
+            )
+
+            # Get inventory
+            inventory_row = await conn.fetchrow(
+                """
+                SELECT SUM(quantity) as total_quantity,
+                       BOOL_OR(quantity > 0) as in_stock
+                FROM inventory
+                WHERE product_family_uuid = $1
+                """,
+                uuid,
+            )
+
+            return {
+                "product": dict(product_row),
+                "attributes": [dict(row) for row in attributes],
+                "images": [dict(row) for row in images],
+                "documents": [dict(row) for row in documents],
+                "price": dict(price_row) if price_row else None,
+                "inventory": dict(inventory_row) if inventory_row else None,
+            }
+
+    async def search(
+        self,
+        query: str,
+        category_id: Optional[int] = None,
+        brand: Optional[str] = None,
+        source_name: Optional[str] = None,
+        min_price: Optional[Decimal] = None,
+        max_price: Optional[Decimal] = None,
+        in_stock: Optional[bool] = None,
+        enrichment_status: Optional[str] = None,
+        offset: int = 0,
+        limit: int = 20,
+    ) -> tuple[list[dict], int]:
+        """
+        Full-text search for products.
+
+        Args:
+            query: Search query.
+            category_id: Filter by category.
+            brand: Filter by brand.
+            source_name: Filter by source.
+            min_price: Minimum price filter.
+            max_price: Maximum price filter.
+            in_stock: Filter by stock availability.
+            enrichment_status: Filter by enrichment status.
+            offset: Number of results to skip.
+            limit: Maximum number of results.
+
+        Returns:
+            Tuple of (list of product dicts, total count).
+        """
+        # Build WHERE clause dynamically
+        conditions = ["pf.search_vector @@ plainto_tsquery('russian', $1)"]
+        params = [query]
+        param_num = 2
+
+        if category_id is not None:
+            conditions.append(f"pf.category_id = ${param_num}")
+            params.append(category_id)
+            param_num += 1
+
+        if brand is not None:
+            conditions.append(f"pf.brand = ${param_num}")
+            params.append(brand)
+            param_num += 1
+
+        if source_name is not None:
+            conditions.append(f"pf.source_name = ${param_num}")
+            params.append(source_name)
+            param_num += 1
+
+        if enrichment_status is not None:
+            conditions.append(f"pf.enrichment_status = ${param_num}")
+            params.append(enrichment_status)
+            param_num += 1
+
+        if min_price is not None or max_price is not None:
+            price_conditions = []
+            if min_price is not None:
+                price_conditions.append(f"p.amount >= ${param_num}")
+                params.append(float(min_price))
+                param_num += 1
+            if max_price is not None:
+                price_conditions.append(f"p.amount <= ${param_num}")
+                params.append(float(max_price))
+                param_num += 1
+            conditions.extend(price_conditions)
+
+        if in_stock is not None and in_stock:
+            conditions.append("i.quantity > 0")
+
+        where_clause = " AND ".join(conditions)
+
+        # Build JOIN clauses
+        join_clauses = ""
+        if min_price is not None or max_price is not None:
+            join_clauses += " LEFT JOIN prices p ON pf.uuid = p.product_family_uuid AND p.is_active = true"
+        if in_stock is not None and in_stock:
+            join_clauses += " LEFT JOIN inventory i ON pf.uuid = i.product_family_uuid"
+
+        # Query for products with relevance ranking
+        query_sql = f"""
+            SELECT DISTINCT
+                pf.uuid, pf.name_technical, pf.brand, pf.sku, pf.category_id,
+                pf.source_name, pf.enrichment_status, pf.quality_score,
+                pf.created_at, pf.updated_at, pf.external_id, pf.source_url,
+                ts_rank(pf.search_vector, plainto_tsquery('russian', $1)) as rank
+            FROM product_families pf
+            {join_clauses}
+            WHERE {where_clause}
+            ORDER BY rank DESC, pf.created_at DESC
+            LIMIT ${param_num} OFFSET ${param_num + 1}
+        """
+
+        params.extend([limit, offset])
+
+        # Count query
+        count_query = f"""
+            SELECT COUNT(DISTINCT pf.uuid)
+            FROM product_families pf
+            {join_clauses}
+            WHERE {where_clause}
+        """
+
+        async with self._pool.acquire() as conn:
+            rows = await conn.fetch(query_sql, *params[:-2])
+            count_row = await conn.fetchval(count_query, *params[:-2])
+
+            products = []
+            for row in rows:
+                product_dict = dict(row)
+                # Remove rank from result
+                product_dict.pop("rank", None)
+                products.append(product_dict)
+
+            return products, count_row or 0
 
     def _serialize_json(self, data: dict) -> str:
         """

@@ -3,12 +3,28 @@ FastAPI HTTP Handlers for Product Service API v1.
 
 Implements REST endpoints for product family operations.
 """
+from decimal import Decimal
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Depends, Header, status
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, HTTPException, Depends, Header, Query, Path, status
 
+from internal.transport.http.dto import (
+    CategoryShort,
+    PaginatedResponse,
+    PaginationInfo,
+    ProductListItem,
+    ProductDetail,
+    SearchRequest,
+    PriceDTO,
+    AttributeDTO,
+    ImageDTO,
+    DocumentDTO,
+    SourceDTO,
+    AvailabilityDTO,
+    CategoriesResponse,
+    CategoryTreeNode,
+)
 from internal.usecase.create_product import (
     CreateProductUseCase,
     CreateProductInput,
@@ -16,6 +32,10 @@ from internal.usecase.create_product import (
 from internal.usecase.enrich_product import (
     EnrichProductUseCase,
     EnrichProductInput,
+)
+from internal.usecase.search_products import (
+    SearchProductsUseCase,
+    SearchProductsInput,
 )
 from internal.domain.errors import (
     ProductNotFoundError,
@@ -28,10 +48,14 @@ from pkg.logger.logger import get_logger
 
 logger = get_logger(__name__)
 
-router = APIRouter(prefix="/api/v1/products", tags=["products"])
+
+router = APIRouter(prefix="/api/v1", tags=["products"])
 
 
-# Request/Response DTOs
+# Import existing DTOs from dto module for legacy endpoints
+from pydantic import BaseModel, Field
+
+
 class CreateProductFamilyRequest(BaseModel):
     """Request body for creating a product family."""
     
@@ -110,6 +134,7 @@ class Dependencies:
     
     create_use_case: Optional[CreateProductUseCase] = None
     enrich_use_case: Optional[EnrichProductUseCase] = None
+    search_use_case: Optional[SearchProductsUseCase] = None
     repository = None
 
 
@@ -136,9 +161,30 @@ def get_enrich_use_case() -> EnrichProductUseCase:
     return _deps.enrich_use_case
 
 
+def get_search_use_case() -> SearchProductsUseCase:
+    """Get SearchProductsUseCase instance."""
+    if _deps.search_use_case is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Service not initialized",
+        )
+    return _deps.search_use_case
+
+
+def get_repository():
+    """Get repository instance."""
+    if _deps.repository is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Service not initialized",
+        )
+    return _deps.repository
+
+
 def set_dependencies(
     create_use_case: CreateProductUseCase,
     enrich_use_case: EnrichProductUseCase,
+    search_use_case: Optional[SearchProductsUseCase] = None,
     repository=None,
 ) -> None:
     """
@@ -148,12 +194,13 @@ def set_dependencies(
     """
     _deps.create_use_case = create_use_case
     _deps.enrich_use_case = enrich_use_case
+    _deps.search_use_case = search_use_case
     _deps.repository = repository
 
 
 # Handlers
 @router.post(
-    "/families",
+    "/products/families",
     response_model=ProductFamilyResponse,
     status_code=status.HTTP_201_CREATED,
     responses={
@@ -234,7 +281,7 @@ async def create_product_family(
 
 
 @router.get(
-    "/families/{product_uuid}",
+    "/products/families/{product_uuid}",
     response_model=ProductFamilyResponse,
     responses={
         200: {"description": "Product family found"},
@@ -287,7 +334,7 @@ async def get_product_family(
 
 
 @router.post(
-    "/families/{product_uuid}/enrich",
+    "/products/families/{product_uuid}/enrich",
     response_model=EnrichProductResponse,
     responses={
         200: {"description": "Product enriched successfully"},
@@ -353,7 +400,7 @@ async def enrich_product_family(
         )
 
 
-@router.get("/health")
+@router.get("/products/health")
 async def health_check() -> dict:
     """
     Health check endpoint.
@@ -362,3 +409,350 @@ async def health_check() -> dict:
         Health status.
     """
     return {"status": "healthy", "service": "product-service"}
+
+
+# Helper functions for DTO conversion
+def _build_category_dto(category_id: int) -> CategoryShort:
+    """Build category DTO (placeholder for now)."""
+    return CategoryShort(
+        id=category_id,
+        name=f"Category {category_id}",
+        path=["Root", f"Category {category_id}"],
+    )
+
+
+def _build_product_list_item(row: dict) -> ProductListItem:
+    """Convert database row to ProductListItem DTO."""
+    price_dto = None
+    # Price will be fetched separately if needed
+    
+    return ProductListItem(
+        uuid=row["uuid"],
+        name_technical=row["name_technical"],
+        brand=row.get("brand"),
+        sku=row.get("sku"),
+        category=_build_category_dto(row["category_id"]),
+        price=price_dto,
+        source_name=row.get("source_name"),
+        enrichment_status=row["enrichment_status"],
+        quality_score=float(row["quality_score"]) if row.get("quality_score") else None,
+        created_at=row["created_at"],
+    )
+
+
+# New API Endpoints
+
+@router.get(
+    "/products",
+    response_model=PaginatedResponse,
+    responses={
+        200: {"description": "List of products"},
+    },
+)
+async def list_products(
+    page: int = Query(1, ge=1, description="Page number"),
+    per_page: int = Query(20, ge=1, le=100, description="Items per page"),
+    category_id: Optional[int] = Query(None, description="Filter by category"),
+    brand: Optional[str] = Query(None, description="Filter by brand"),
+    source_name: Optional[str] = Query(None, description="Filter by source"),
+    min_price: Optional[Decimal] = Query(None, description="Minimum price"),
+    max_price: Optional[Decimal] = Query(None, description="Maximum price"),
+    in_stock: Optional[bool] = Query(None, description="Only in stock"),
+    enrichment_status: Optional[str] = Query(None, description="Filter by enrichment status"),
+    sort_by: str = Query("created_at", description="Sort by field"),
+    sort_order: str = Query("desc", description="Sort order (asc/desc)"),
+    repository = Depends(get_repository),
+) -> PaginatedResponse:
+    """
+    Get list of products with filters and pagination.
+    
+    Supports filtering by category, brand, source, price range, stock availability,
+    and enrichment status.
+    """
+    logger.info(
+        "Listing products",
+        page=page,
+        per_page=per_page,
+        category_id=category_id,
+    )
+    
+    offset = (page - 1) * per_page
+    
+    products, total = await repository.list_products(
+        category_id=category_id,
+        brand=brand,
+        source_name=source_name,
+        min_price=min_price,
+        max_price=max_price,
+        in_stock=in_stock,
+        enrichment_status=enrichment_status,
+        offset=offset,
+        limit=per_page,
+        sort_by=sort_by,
+        sort_order=sort_order,
+    )
+    
+    product_items = [_build_product_list_item(p) for p in products]
+    
+    total_pages = (total + per_page - 1) // per_page
+    
+    return PaginatedResponse(
+        data=product_items,
+        pagination=PaginationInfo(
+            page=page,
+            per_page=per_page,
+            total_items=total,
+            total_pages=total_pages,
+        ),
+    )
+
+
+@router.get(
+    "/products/{uuid}",
+    response_model=ProductDetail,
+    responses={
+        200: {"description": "Product details"},
+        404: {"model": ErrorResponse, "description": "Product not found"},
+    },
+)
+async def get_product_details(
+    uuid: UUID = Path(..., description="Product UUID"),
+    repository = Depends(get_repository),
+) -> ProductDetail:
+    """
+    Get detailed product information including attributes, images, and documents.
+    """
+    logger.info("Getting product details", uuid=str(uuid))
+    
+    result = await repository.get_product_with_details(uuid)
+    
+    if not result:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Product {uuid} not found",
+        )
+    
+    product = result["product"]
+    
+    # Build DTOs
+    attributes = [
+        AttributeDTO(
+            name=attr["name"],
+            value=attr["value"],
+            unit=attr.get("unit"),
+        )
+        for attr in result["attributes"]
+    ]
+    
+    images = [
+        ImageDTO(
+            url=img["url"],
+            alt=img.get("alt_text", ""),
+            is_main=img.get("is_main", False),
+        )
+        for img in result["images"]
+    ]
+    
+    documents = [
+        DocumentDTO(
+            type=doc["document_type"],
+            title=doc["title"],
+            url=doc["url"],
+        )
+        for doc in result["documents"]
+    ]
+    
+    price_dto = None
+    if result["price"]:
+        price_dto = PriceDTO(
+            value=Decimal(str(result["price"]["amount"])),
+            currency=result["price"].get("currency", "RUB"),
+            unit="шт",
+        )
+    
+    availability = None
+    if result["inventory"]:
+        availability = AvailabilityDTO(
+            in_stock=result["inventory"].get("in_stock", False),
+            quantity=int(result["inventory"]["total_quantity"]) if result["inventory"].get("total_quantity") else None,
+            delivery_days=2,  # Placeholder
+        )
+    
+    return ProductDetail(
+        uuid=product["uuid"],
+        name_technical=product["name_technical"],
+        brand=product.get("brand"),
+        manufacturer=product.get("brand"),  # Using brand as manufacturer for now
+        sku=product.get("sku"),
+        description=product.get("description"),
+        category=_build_category_dto(product["category_id"]),
+        attributes=attributes,
+        price=price_dto,
+        availability=availability,
+        images=images,
+        documents=documents,
+        source=SourceDTO(
+            name=product.get("source_name"),
+            url=product.get("source_url"),
+            external_id=product.get("external_id"),
+        ),
+        enrichment_status=product["enrichment_status"],
+        quality_score=float(product["quality_score"]) if product.get("quality_score") else None,
+        created_at=product["created_at"],
+        updated_at=product["updated_at"],
+    )
+
+
+@router.post(
+    "/products/search",
+    response_model=PaginatedResponse,
+    responses={
+        200: {"description": "Search results"},
+    },
+)
+async def search_products(
+    request: SearchRequest,
+    use_case: SearchProductsUseCase = Depends(get_search_use_case),
+) -> PaginatedResponse:
+    """
+    Full-text search for products.
+    
+    Uses PostgreSQL full-text search with Russian language support.
+    Supports all the same filters as the list endpoint.
+    """
+    logger.info(
+        "Searching products",
+        query=request.query,
+        page=request.page,
+    )
+    
+    input_data = SearchProductsInput(
+        query=request.query,
+        category_id=request.filters.category_id if request.filters else None,
+        brand=request.filters.brand if request.filters else None,
+        source_name=request.filters.source_name if request.filters else None,
+        min_price=request.filters.min_price if request.filters else None,
+        max_price=request.filters.max_price if request.filters else None,
+        in_stock=request.filters.in_stock if request.filters else None,
+        enrichment_status=request.filters.enrichment_status if request.filters else None,
+        page=request.page,
+        per_page=request.per_page,
+    )
+    
+    result = await use_case.execute(input_data)
+    
+    product_items = [_build_product_list_item(p) for p in result.products]
+    
+    total_pages = (result.total + request.per_page - 1) // request.per_page
+    
+    return PaginatedResponse(
+        data=product_items,
+        pagination=PaginationInfo(
+            page=result.page,
+            per_page=result.per_page,
+            total_items=result.total,
+            total_pages=total_pages,
+        ),
+    )
+
+
+@router.get(
+    "/categories",
+    response_model=CategoriesResponse,
+    responses={
+        200: {"description": "Category tree"},
+    },
+)
+async def get_categories() -> CategoriesResponse:
+    """
+    Get category tree.
+    
+    Returns hierarchical category structure.
+    This is a placeholder implementation.
+    """
+    logger.info("Getting category tree")
+    
+    # Placeholder implementation
+    # In a real system, this would fetch from a categories table
+    categories = [
+        CategoryTreeNode(
+            id=1,
+            name="Стройматериалы",
+            slug="stroymaterialy",
+            product_count=5234,
+            children=[
+                CategoryTreeNode(
+                    id=10,
+                    name="Кирпич",
+                    slug="kirpich",
+                    product_count=342,
+                    children=[],
+                )
+            ],
+        )
+    ]
+    
+    return CategoriesResponse(data=categories)
+
+
+@router.get(
+    "/categories/{category_id}/products",
+    response_model=PaginatedResponse,
+    responses={
+        200: {"description": "Products in category"},
+    },
+)
+async def get_category_products(
+    category_id: int = Path(..., description="Category ID"),
+    page: int = Query(1, ge=1, description="Page number"),
+    per_page: int = Query(20, ge=1, le=100, description="Items per page"),
+    brand: Optional[str] = Query(None, description="Filter by brand"),
+    source_name: Optional[str] = Query(None, description="Filter by source"),
+    min_price: Optional[Decimal] = Query(None, description="Minimum price"),
+    max_price: Optional[Decimal] = Query(None, description="Maximum price"),
+    in_stock: Optional[bool] = Query(None, description="Only in stock"),
+    enrichment_status: Optional[str] = Query(None, description="Filter by enrichment status"),
+    sort_by: str = Query("created_at", description="Sort by field"),
+    sort_order: str = Query("desc", description="Sort order (asc/desc)"),
+    repository = Depends(get_repository),
+) -> PaginatedResponse:
+    """
+    Get products in a specific category.
+    
+    This is equivalent to GET /products with category_id filter pre-applied.
+    """
+    logger.info(
+        "Getting category products",
+        category_id=category_id,
+        page=page,
+    )
+    
+    offset = (page - 1) * per_page
+    
+    products, total = await repository.list_products(
+        category_id=category_id,
+        brand=brand,
+        source_name=source_name,
+        min_price=min_price,
+        max_price=max_price,
+        in_stock=in_stock,
+        enrichment_status=enrichment_status,
+        offset=offset,
+        limit=per_page,
+        sort_by=sort_by,
+        sort_order=sort_order,
+    )
+    
+    product_items = [_build_product_list_item(p) for p in products]
+    
+    total_pages = (total + per_page - 1) // per_page
+    
+    return PaginatedResponse(
+        data=product_items,
+        pagination=PaginationInfo(
+            page=page,
+            per_page=per_page,
+            total_items=total,
+            total_pages=total_pages,
+        ),
+    )
