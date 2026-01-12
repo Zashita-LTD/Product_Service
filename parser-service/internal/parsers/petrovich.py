@@ -584,9 +584,10 @@ class PetrovichParser(BaseParser):
                     try:
                         full_url = urljoin(self._base_url, src)
                         images.append(ProductImage(url=full_url, position=idx))
-                    except Exception:
-                        # Skip invalid image URLs
-                        pass
+                    except Exception as e:
+                        # Skip invalid image URLs (ValidationError from Pydantic, ValueError from URL parsing)
+                        logger.debug(f"Skipping invalid image URL {src}: {e}")
+                        continue
             
             result["images"] = images[:10]  # Limit to 10 images
             
@@ -604,9 +605,10 @@ class PetrovichParser(BaseParser):
                             type=doc_type,
                             file_format="pdf" if href.endswith(".pdf") else None,
                         ))
-                    except Exception:
-                        # Skip invalid document URLs
-                        pass
+                    except Exception as e:
+                        # Skip invalid document URLs (ValidationError from Pydantic, ValueError from URL parsing)
+                        logger.debug(f"Skipping invalid document URL {href}: {e}")
+                        continue
             
             result["documents"] = documents
             
