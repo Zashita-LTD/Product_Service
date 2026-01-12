@@ -14,6 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 
 from internal.transport.http.v1.handlers import router, set_dependencies
+from internal.transport.http.middleware import MetricsMiddleware
 from internal.infrastructure.postgres.repository import (
     PostgresProductRepository,
     create_pool,
@@ -158,6 +159,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Metrics middleware
+app.add_middleware(MetricsMiddleware)
 
 
 # Request ID middleware

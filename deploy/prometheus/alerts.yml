@@ -1,0 +1,54 @@
+groups:
+  - name: product-service
+    rules:
+      - alert: HighErrorRate
+        expr: rate(http_requests_total{status_code=~"5.."}[5m]) / rate(http_requests_total[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High error rate in Product Service"
+          description: "Error rate is {{ $value | humanizePercentage }}"
+      
+      - alert: EnrichmentFailures
+        expr: rate(enrichment_requests_total{status="error"}[15m]) > 0.1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "AI enrichment failures detected"
+      
+      - alert: KafkaConsumerLag
+        expr: kafka_consumer_lag > 1000
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Kafka consumer lag is high"
+
+  - name: parser-service
+    rules:
+      - alert: ParserBlocked
+        expr: rate(parser_blocked_requests_total[5m]) > 0.5
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Parser is being blocked"
+          description: "{{ $labels.parser_name }} blocked rate: {{ $value }}/s"
+      
+      - alert: ProxyPoolDepleted
+        expr: parser_proxy_pool_size{status="good"} < 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Proxy pool almost depleted"
+      
+      - alert: LowParsingRate
+        expr: rate(parser_products_extracted_total{status="success"}[30m]) < 1
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Parsing rate is very low"

@@ -6,9 +6,11 @@ Handles AI enrichment of product families using Google Vertex AI.
 from decimal import Decimal
 from typing import Optional, Protocol
 from uuid import UUID
+import time
 
 from internal.domain.product import ProductFamily
 from internal.domain.errors import ProductNotFoundError, EnrichmentError
+from internal.infrastructure.metrics import ENRICHMENT_REQUESTS, ENRICHMENT_DURATION
 
 
 class ProductRepository(Protocol):
@@ -143,6 +145,9 @@ class EnrichProductUseCase:
         if not product:
             raise ProductNotFoundError(str(input_dto.product_uuid))
 
+        # Track enrichment duration
+        start_time = time.time()
+        
         try:
             # Calculate quality score using AI
             quality_score = await self._ai_provider.calculate_quality_score(
@@ -159,6 +164,11 @@ class EnrichProductUseCase:
             # Update cache with enriched data
             if self._cache:
                 await self._cache.set_product(str(product.uuid), updated_product.to_dict())
+            
+            # Track successful enrichment
+            duration = time.time() - start_time
+            ENRICHMENT_DURATION.observe(duration)
+            ENRICHMENT_REQUESTS.labels(status='success').inc()
 
             return EnrichProductOutput(
                 product=updated_product,
@@ -167,6 +177,11 @@ class EnrichProductUseCase:
             )
 
         except Exception as e:
+            # Track failed enrichment
+            duration = time.time() - start_time
+            ENRICHMENT_DURATION.observe(duration)
+            ENRICHMENT_REQUESTS.labels(status='error').inc()
+            
             # Mark enrichment as failed
             product.mark_enrichment_failed()
             await self._repository.update(product)

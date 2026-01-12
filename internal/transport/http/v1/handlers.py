@@ -9,6 +9,8 @@ from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Path, Query, status
+from fastapi.responses import Response
+from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 
 from internal.domain.errors import (
     DomainValidationError,
@@ -409,6 +411,20 @@ async def health_check() -> dict:
         Health status.
     """
     return {"status": "healthy", "service": "product-service"}
+
+
+@router.get("/products/metrics")
+async def metrics():
+    """
+    Prometheus metrics endpoint.
+
+    Returns:
+        Prometheus metrics in text format.
+    """
+    return Response(
+        content=generate_latest(),
+        media_type=CONTENT_TYPE_LATEST
+    )
 
 
 # Helper functions for DTO conversion
