@@ -35,8 +35,7 @@ ENV PATH=/root/.local/bin:$PATH
 # Copy application code
 COPY internal/ ./internal/
 COPY pkg/ ./pkg/
-COPY cmd/__init__.py ./cmd/__init__.py
-COPY cmd/api/ ./cmd/api/
+COPY cmd/ ./cmd/
 
 # Set Python path
 ENV PYTHONPATH=/app
