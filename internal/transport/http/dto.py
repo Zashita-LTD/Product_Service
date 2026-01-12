@@ -35,7 +35,7 @@ class CategoryTreeNode(BaseModel):
     name: str = Field(..., description="Category name")
     slug: str = Field(..., description="URL slug")
     product_count: int = Field(0, description="Number of products in category")
-    children: List["CategoryTreeNode"] = Field(default_factory=list, description="Child categories")
+    children: List[CategoryTreeNode] = Field(default_factory=list, description="Child categories")
 
     class Config:
         json_schema_extra = {
@@ -47,6 +47,10 @@ class CategoryTreeNode(BaseModel):
                 "children": [],
             }
         }
+
+
+# Rebuild model to resolve forward references
+CategoryTreeNode.model_rebuild()
 
 
 class CategoriesResponse(BaseModel):

@@ -400,7 +400,7 @@ async def enrich_product_family(
         )
 
 
-@router.get("/products/health")
+@router.get("/health")
 async def health_check() -> dict:
     """
     Health check endpoint.
