@@ -1,6 +1,6 @@
 # Makefile for Product Service
 
-.PHONY: help install dev run-api run-worker test lint format migrate docker-up docker-down clean
+.PHONY: help install dev run-api run-worker run-parser test lint format migrate docker-up docker-down clean
 
 # Default target
 help:
@@ -11,6 +11,7 @@ help:
 	@echo "  make dev         - Install dev dependencies"
 	@echo "  make run-api     - Run API server locally"
 	@echo "  make run-worker  - Run enrichment worker locally"
+	@echo "  make run-parser  - Run parser service locally"
 	@echo ""
 	@echo "Database:"
 	@echo "  make migrate     - Run database migrations"
@@ -38,10 +39,12 @@ help:
 # Installation
 install:
 	pip install -r requirements.txt
+	playwright install chromium
 
 dev:
 	pip install -r requirements.txt
 	pip install -e .
+	playwright install chromium
 
 # Running
 run-api:
@@ -52,6 +55,9 @@ run-worker:
 
 run-sync-worker:
 	cd cmd/worker-sync && python main.py
+
+run-parser:
+	cd parser_service/cmd && python main.py
 
 # Database
 migrate:
