@@ -1,0 +1,191 @@
+# Default values for product-service
+# This is a YAML-formatted file
+
+# Global settings
+global:
+  imageRegistry: ""
+  imagePullSecrets: []
+
+# API Deployment
+api:
+  replicaCount: 3
+  
+  image:
+    repository: product-service-api
+    tag: latest
+    pullPolicy: IfNotPresent
+  
+  service:
+    type: ClusterIP
+    port: 8000
+  
+  ingress:
+    enabled: true
+    className: nginx
+    annotations:
+      nginx.ingress.kubernetes.io/rate-limit: "100"
+      nginx.ingress.kubernetes.io/rate-limit-window: "1m"
+    hosts:
+      - host: product-service.example.com
+        paths:
+          - path: /
+            pathType: Prefix
+    tls:
+      - secretName: product-service-tls
+        hosts:
+          - product-service.example.com
+  
+  resources:
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+    requests:
+      cpu: 250m
+      memory: 256Mi
+  
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
+  
+  livenessProbe:
+    httpGet:
+      path: /api/v1/products/health
+      port: 8000
+    initialDelaySeconds: 10
+    periodSeconds: 15
+    timeoutSeconds: 5
+    failureThreshold: 3
+  
+  readinessProbe:
+    httpGet:
+      path: /api/v1/products/health
+      port: 8000
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    timeoutSeconds: 3
+    failureThreshold: 3
+
+# Worker Deployment
+worker:
+  enrichment:
+    replicaCount: 2
+    
+    image:
+      repository: product-service-worker
+      tag: latest
+      pullPolicy: IfNotPresent
+    
+    resources:
+      limits:
+        cpu: 500m
+        memory: 512Mi
+      requests:
+        cpu: 100m
+        memory: 128Mi
+    
+    autoscaling:
+      enabled: true
+      minReplicas: 2
+      maxReplicas: 5
+      targetCPUUtilizationPercentage: 80
+
+# Environment Configuration
+env:
+  LOG_LEVEL: INFO
+  LOG_FORMAT: json
+
+# Database Configuration
+database:
+  host: postgresql
+  port: 5432
+  name: product_service
+  user: postgres
+  existingSecret: product-service-db-secret
+  existingSecretPasswordKey: password
+
+# Redis Configuration
+redis:
+  host: redis-master
+  port: 6379
+  existingSecret: product-service-redis-secret
+  existingSecretPasswordKey: password
+
+# Kafka Configuration
+kafka:
+  bootstrapServers: kafka:9092
+  groupId: product-service
+
+# Vertex AI Configuration
+vertexai:
+  projectId: ""
+  location: us-central1
+  existingSecret: product-service-gcp-secret
+
+# PostgreSQL subchart
+postgresql:
+  enabled: true
+  auth:
+    postgresPassword: postgres
+    database: product_service
+  primary:
+    persistence:
+      enabled: true
+      size: 10Gi
+
+# Redis subchart
+redis:
+  enabled: true
+  architecture: standalone
+  auth:
+    enabled: true
+    password: redis
+  master:
+    persistence:
+      enabled: true
+      size: 1Gi
+
+# Kafka subchart
+kafka:
+  enabled: true
+  replicaCount: 3
+  persistence:
+    enabled: true
+    size: 10Gi
+
+# ServiceAccount
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+# Pod Security
+podSecurityContext:
+  fsGroup: 1000
+
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  readOnlyRootFilesystem: true
+
+# Node selector
+nodeSelector: {}
+
+# Tolerations
+tolerations: []
+
+# Affinity
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values:
+                  - product-service
+          topologyKey: kubernetes.io/hostname

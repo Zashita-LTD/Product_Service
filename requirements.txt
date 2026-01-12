@@ -1,0 +1,50 @@
+# Product Service - Dependencies
+
+# Web Framework
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+
+# Database
+asyncpg==0.29.0
+psycopg2-binary==2.9.9
+
+# Message Queue
+aiokafka==0.10.0
+
+# Cache
+redis==5.0.1
+
+# Serialization
+msgpack==1.0.7
+pydantic==2.5.3
+pydantic-settings==2.1.0
+
+# Google Cloud AI
+google-cloud-aiplatform==1.38.1
+vertexai==1.38.1
+
+# Resilience
+circuitbreaker==2.0.0
+
+# Configuration
+python-dotenv==1.0.0
+
+# Logging
+structlog==24.1.0
+python-json-logger==2.0.7
+
+# Testing
+pytest==7.4.4
+pytest-asyncio==0.23.3
+pytest-cov==4.1.0
+httpx==0.26.0
+faker==22.2.0
+
+# Code Quality
+black==23.12.1
+isort==5.13.2
+flake8==7.0.0
+mypy==1.8.0
+
+# Types
+types-redis==4.6.0
