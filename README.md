@@ -215,8 +215,30 @@ make coverage
 ## 📊 Мониторинг
 
 ### Метрики
-- Prometheus метрики доступны на `/metrics`
-- Grafana дашборды в `deploy/grafana/`
+- Prometheus метрики доступны на `/api/v1/products/metrics`
+- Grafana дашборды в `deploy/grafana/dashboards/`
+- Alertmanager для уведомлений об инцидентах
+
+### Компоненты мониторинга
+
+**Prometheus** (http://localhost:9090):
+- Сбор метрик каждые 15 секунд
+- Хранение time-series данных
+- Evaluation alerting rules
+
+**Grafana** (http://localhost:3000):
+- Product Service Dashboard - HTTP, Kafka, AI enrichment, БД
+- Parser Service Dashboard - Парсинг, прокси, anti-detection
+- Login: admin/admin
+
+**Alertmanager** (http://localhost:9093):
+- High Error Rate (>5%)
+- Enrichment Failures
+- Kafka Consumer Lag
+- Parser Blocked
+- Low Parsing Rate
+
+Подробная документация: [docs/monitoring.md](docs/monitoring.md)
 
 ### Логирование
 - Структурированные JSON логи

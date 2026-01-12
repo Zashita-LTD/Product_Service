@@ -13,6 +13,7 @@ from aiokafka.errors import KafkaError
 
 from internal.domain.product import OutboxEvent, ProductFamily
 from internal.infrastructure.postgres.repository import PostgresProductRepository
+from internal.infrastructure.metrics import KAFKA_MESSAGES_CONSUMED
 from pkg.logger.logger import get_logger
 
 if TYPE_CHECKING:
@@ -122,10 +123,16 @@ class RawProductConsumer:
                     self._stats["total_processed"] += 1
                     if result == "imported":
                         self._stats["imported"] += 1
+                        # Track successful import metric
+                        KAFKA_MESSAGES_CONSUMED.labels(topic=self._topic, status='success').inc()
                     elif result == "duplicate":
                         self._stats["duplicates"] += 1
+                        # Track duplicate metric
+                        KAFKA_MESSAGES_CONSUMED.labels(topic=self._topic, status='duplicate').inc()
                     elif result == "error":
                         self._stats["errors"] += 1
+                        # Track error metric
+                        KAFKA_MESSAGES_CONSUMED.labels(topic=self._topic, status='error').inc()
 
                     # Log progress every 100 products
                     if self._stats["total_processed"] % 100 == 0:
