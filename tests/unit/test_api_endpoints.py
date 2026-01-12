@@ -8,7 +8,7 @@ from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock
 
 from fastapi.testclient import TestClient
-from httpx import AsyncClient
+from httpx import AsyncClient, ASGITransport
 
 from internal.transport.http.v1.handlers import (
     router,
@@ -63,7 +63,7 @@ class TestProductListEndpoint:
         app = FastAPI()
         app.include_router(router)
         
-        async with AsyncClient(app=app, base_url="http://test") as client:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             response = await client.get("/api/v1/products")
         
         # Assert
@@ -96,7 +96,7 @@ class TestProductListEndpoint:
         app = FastAPI()
         app.include_router(router)
         
-        async with AsyncClient(app=app, base_url="http://test") as client:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             response = await client.get(
                 "/api/v1/products",
                 params={
@@ -187,7 +187,7 @@ class TestProductDetailEndpoint:
         app = FastAPI()
         app.include_router(router)
         
-        async with AsyncClient(app=app, base_url="http://test") as client:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             response = await client.get(f"/api/v1/products/{product_uuid}")
         
         assert response.status_code == 200
@@ -221,7 +221,7 @@ class TestProductDetailEndpoint:
         app = FastAPI()
         app.include_router(router)
         
-        async with AsyncClient(app=app, base_url="http://test") as client:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             response = await client.get(f"/api/v1/products/{product_uuid}")
         
         assert response.status_code == 404
@@ -276,7 +276,7 @@ class TestSearchEndpoint:
         app = FastAPI()
         app.include_router(router)
         
-        async with AsyncClient(app=app, base_url="http://test") as client:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             response = await client.post(
                 "/api/v1/products/search",
                 json={
@@ -322,7 +322,7 @@ class TestCategoriesEndpoint:
         app = FastAPI()
         app.include_router(router)
         
-        async with AsyncClient(app=app, base_url="http://test") as client:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             response = await client.get("/api/v1/categories")
         
         assert response.status_code == 200
@@ -355,7 +355,7 @@ class TestCategoryProductsEndpoint:
         app = FastAPI()
         app.include_router(router)
         
-        async with AsyncClient(app=app, base_url="http://test") as client:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             response = await client.get("/api/v1/categories/10/products")
         
         assert response.status_code == 200
