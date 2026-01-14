@@ -35,42 +35,65 @@ logger = get_logger(__name__)
 
 class EmbeddingClientProtocol(Protocol):
     """Протокол для генерации эмбеддингов."""
-    
+
     @property
-    def model_name(self) -> str: ...
-    
-    async def generate_embedding(self, text: str) -> List[float]: ...
+    def model_name(self) -> str:
+        """Model name."""
+        ...
+
+    async def generate_embedding(self, text: str) -> List[float]:
+        """Generate embedding for text."""
+        ...
 
 
 class ProductRepositoryProtocol(Protocol):
     """Протокол для работы с товарами."""
-    
-    async def get_by_uuid(self, uuid: UUID) -> Optional[ProductFamily]: ...
-    async def find_by_source_url(self, source_url: str) -> Optional[ProductFamily]: ...
-    async def get_by_name(self, name_technical: str) -> Optional[ProductFamily]: ...
+
+    async def get_by_uuid(self, uuid: UUID) -> Optional[ProductFamily]:
+        """Get product by UUID."""
+        ...
+
+    async def find_by_source_url(self, source_url: str) -> Optional[ProductFamily]:
+        """Find product by source URL."""
+        ...
+
+    async def get_by_name(self, name_technical: str) -> Optional[ProductFamily]:
+        """Get product by technical name."""
+        ...
+
     async def create_with_outbox(
         self,
         product: ProductFamily,
         event: OutboxEvent,
         **kwargs,
-    ) -> ProductFamily: ...
+    ) -> ProductFamily:
+        """Create product with outbox event."""
+        ...
+
     async def upsert_embedding(
         self,
         product_uuid: UUID,
         embedding: List[float],
         model: str,
-    ) -> None: ...
+    ) -> None:
+        """Upsert product embedding."""
+        ...
+
     async def semantic_search(
         self,
         embedding: List[float],
         **kwargs,
-    ) -> Tuple[List[dict], int]: ...
+    ) -> Tuple[List[dict], int]:
+        """Semantic search by embedding."""
+        ...
 
 
 class ManufacturerServiceProtocol(Protocol):
     """Протокол для работы с производителями."""
-    
-    async def get_or_create_by_name(self, name: str) -> Optional[UUID]: ...
+
+    async def get_or_create_by_name(self, name: str) -> Optional[UUID]:
+        """Get or create manufacturer by name."""
+        ...
 
 
 # ============================================================================
@@ -80,12 +103,13 @@ class ManufacturerServiceProtocol(Protocol):
 @dataclass
 class RefineryResult:
     """Результат обработки сырых данных."""
+
     snapshot_id: UUID
     status: str  # 'new_product', 'enriched', 'duplicate', 'error'
     product_uuid: Optional[UUID] = None
     message: str = ""
     enrichments: List[str] = None  # Список добавленных данных
-    
+
     def __post_init__(self):
         if self.enrichments is None:
             self.enrichments = []
@@ -94,6 +118,7 @@ class RefineryResult:
 @dataclass
 class MergeDecision:
     """Решение о слиянии данных."""
+
     field: str
     action: str  # 'keep_existing', 'use_new', 'merge'
     reason: str
@@ -107,12 +132,12 @@ class MergeDecision:
 
 class DeduplicationStrategy:
     """Стратегии поиска дубликатов."""
-    
+
     # Пороги уверенности
-    EAN_CONFIDENCE = 0.99      # EAN — почти 100% точность
+    EAN_CONFIDENCE = 0.99  # EAN — почти 100% точность
     SKU_BRAND_CONFIDENCE = 0.95  # Артикул + Бренд — высокая точность
-    VECTOR_THRESHOLD = 0.92    # Семантический поиск — порог схожести
-    NAME_THRESHOLD = 0.85      # Поиск по имени — более мягкий порог
+    VECTOR_THRESHOLD = 0.92  # Семантический поиск — порог схожести
+    NAME_THRESHOLD = 0.85  # Поиск по имени — более мягкий порог
 
     def __init__(
         self,

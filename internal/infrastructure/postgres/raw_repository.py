@@ -23,6 +23,7 @@ logger = get_logger(__name__)
 @dataclass
 class RawProductSnapshot:
     """Сырой снимок товара от парсера."""
+
     id: UUID = field(default_factory=uuid4)
     source_name: str = ""
     source_url: str = ""
@@ -43,6 +44,7 @@ class RawProductSnapshot:
 @dataclass
 class ProductSourceLink:
     """Связь товара с источником данных."""
+
     id: UUID = field(default_factory=uuid4)
     product_uuid: UUID = field(default_factory=uuid4)
     source_name: str = ""
@@ -63,6 +65,7 @@ class ProductSourceLink:
 @dataclass
 class EnrichmentAuditEntry:
     """Запись аудита обогащения."""
+
     id: Optional[int] = None
     snapshot_id: Optional[UUID] = None
     product_uuid: Optional[UUID] = None

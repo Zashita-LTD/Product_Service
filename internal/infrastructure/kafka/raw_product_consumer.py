@@ -173,14 +173,18 @@ class RawProductConsumer:
 
                     if retry_count >= self._max_retries:
                         # Skip message after max retries to avoid infinite loop
+                        # Extract source_url from payload if envelope format
+                        raw_value = msg.value
+                        if isinstance(raw_value, dict) and "payload" in raw_value:
+                            raw_value = raw_value["payload"]
                         logger.warning(
                             "Max retries reached, skipping message",
                             topic=msg.topic,
                             partition=msg.partition,
                             offset=msg.offset,
                             source_url=(
-                                msg.value.get("source_url")
-                                if isinstance(msg.value, dict)
+                                raw_value.get("source_url")
+                                if isinstance(raw_value, dict)
                                 else None
                             ),
                         )
@@ -208,15 +212,22 @@ class RawProductConsumer:
         """
         value = msg.value
 
+        # Extract payload from envelope if present (Parser Service format)
+        # Parser sends: {"event_type": "raw_product", "event_id": ..., "payload": {...}}
+        if isinstance(value, dict) and "payload" in value:
+            raw_product = value["payload"]
+        else:
+            raw_product = value
+
         logger.debug(
             "Received raw product",
             topic=msg.topic,
             partition=msg.partition,
             offset=msg.offset,
-            source_url=value.get("source_url"),
+            source_url=raw_product.get("source_url") if isinstance(raw_product, dict) else None,
         )
 
-        return await self._handler.handle(value)
+        return await self._handler.handle(raw_product)
 
 
 class RawProductImportHandler:
@@ -281,8 +292,10 @@ class RawProductImportHandler:
             return "error"
 
         # 3. Resolve category from breadcrumbs
+        # Parser sends "category_breadcrumbs", support both field names
+        category_path = raw_product.get("category_breadcrumbs") or raw_product.get("category_path", [])
         category_id = await self._resolve_category(
-            category_path=raw_product.get("category_path", []),
+            category_path=category_path,
             source_name=raw_product.get("source_name"),
         )
 
