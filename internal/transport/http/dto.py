@@ -86,7 +86,7 @@ class AttributeDTO(BaseModel):
 class AvailabilityDTO(BaseModel):
     """Product availability information."""
 
-    in_stock: bool = Field(..., description="Is product in stock")
+    in_stock: bool = Field(False, description="Is product in stock")
     quantity: Optional[int] = Field(None, description="Available quantity")
     delivery_days: Optional[int] = Field(None, description="Delivery time in days")
 
@@ -162,6 +162,10 @@ class ProductListItem(BaseModel):
     enrichment_status: str = Field(..., description="Enrichment status")
     quality_score: Optional[float] = Field(None, description="Quality score (0.00 - 1.00)")
     created_at: datetime = Field(..., description="Creation timestamp")
+    similarity: Optional[float] = Field(
+        None,
+        description="Semantic similarity score (0.00 - 1.00)",
+    )
 
     class Config:
         json_schema_extra = {
@@ -176,6 +180,7 @@ class ProductListItem(BaseModel):
                 "enrichment_status": "enriched",
                 "quality_score": 0.85,
                 "created_at": "2024-01-15T10:30:00Z",
+                "similarity": 0.94,
             }
         }
 

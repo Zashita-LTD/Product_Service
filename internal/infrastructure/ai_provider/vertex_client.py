@@ -3,7 +3,9 @@ Google Vertex AI Client.
 
 Implements AI enrichment with Circuit Breaker pattern for resilience.
 """
+import asyncio
 from decimal import Decimal
+from typing import Optional
 
 from circuitbreaker import circuit, CircuitBreakerError
 from google.cloud import aiplatform
@@ -230,3 +232,71 @@ class VertexAIClientWithFallback(VertexAIClient):
                 error=str(e),
             )
             return Decimal("0.50")
+
+
+class VertexAIEmbeddingClient:
+    """Client for generating semantic embeddings via Vertex AI."""
+
+    def __init__(
+        self,
+        project_id: str,
+        location: str = "us-central1",
+        model_id: str = "text-embedding-004",
+    ) -> None:
+        self._project_id = project_id
+        self._location = location
+        self._model_id = model_id
+        self._initialized = False
+        self._model: Optional["TextEmbeddingModel"] = None
+
+    async def initialize(self) -> None:
+        """Initialize Vertex AI client and preload embedding model."""
+        if self._initialized:
+            return
+
+        aiplatform.init(
+            project=self._project_id,
+            location=self._location,
+        )
+
+        from vertexai.language_models import TextEmbeddingModel
+
+        self._model = TextEmbeddingModel.from_pretrained(self._model_id)
+        self._initialized = True
+        logger.info(
+            "Vertex AI embedding client initialized",
+            project=self._project_id,
+            location=self._location,
+            model=self._model_id,
+        )
+
+    @property
+    def model_name(self) -> str:
+        """Return the identifier of the embedding model."""
+        return self._model_id
+
+    async def generate_embedding(self, text: str) -> list[float]:
+        """Generate embedding vector for provided text."""
+        if not text or not text.strip():
+            raise ValueError("Text is required to build embedding")
+
+        if not self._initialized:
+            await self.initialize()
+
+        try:
+            return await asyncio.to_thread(self._embed_sync, text)
+        except Exception as exc:  # pragma: no cover - defensive logging
+            logger.error("Failed to generate embedding", error=str(exc))
+            raise
+
+    def _embed_sync(self, text: str) -> list[float]:
+        """Blocking embedding generation executed in a thread."""
+        if self._model is None:
+            raise RuntimeError("Embedding model not initialized")
+
+        embeddings = self._model.get_embeddings([text])
+        if not embeddings:
+            raise RuntimeError("Vertex AI returned empty embedding response")
+
+        values = embeddings[0].values
+        return list(values)

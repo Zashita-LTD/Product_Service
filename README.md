@@ -196,6 +196,50 @@ curl -X POST http://localhost:8000/api/v1/products/families/{uuid}/enrich
 curl http://localhost:8000/api/v1/products/health
 ```
 
+### Семантический поиск (pgvector)
+```bash
+curl -X POST http://localhost:8000/api/v1/products/search/semantic \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "кирпич керамический",
+    "page": 1,
+    "per_page": 20,
+    "filters": {
+      "category_id": 10
+    }
+  }'
+```
+
+**Ответ:**
+```json
+{
+  "data": [
+    {
+      "uuid": "550e8400-e29b-41d4-a716-446655440000",
+      "name_technical": "Кирпич М150",
+      "category": { "id": 10, "name": "Кирпич", "path": ["Стройматериалы", "Кирпич"] },
+      "similarity": 0.94
+    }
+  ],
+  "pagination": {
+    "page": 1,
+    "per_page": 20,
+    "total_items": 128,
+    "total_pages": 7
+  }
+}
+```
+
+### Backfill эмбеддингов
+
+После миграции 008 и настройки Vertex AI выполните бэкфилл для legacy-товаров:
+
+```bash
+python -m cmd.backfill_embeddings.main
+```
+
+Переменная `EMBEDDING_BATCH_SIZE` контролирует размер батча (по умолчанию 50).
+
 ## 🧪 Тестирование
 
 ```bash
@@ -257,6 +301,8 @@ make coverage
 | `KAFKA_RAW_PRODUCTS_TOPIC` | Топик для импорта товаров | raw-products |
 | `DEFAULT_CATEGORY_ID` | ID категории по умолчанию | 1 |
 | `VERTEX_PROJECT_ID` | Google Cloud project ID | - |
+| `VERTEX_EMBEDDING_MODEL` | Vertex AI модель для эмбеддингов | text-embedding-004 |
+| `EMBEDDING_BATCH_SIZE` | Размер батча для backfill скрипта | 50 |
 | `LOG_LEVEL` | Уровень логирования | INFO |
 
 ## 📦 CI/CD

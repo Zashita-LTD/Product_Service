@@ -46,6 +46,10 @@ from internal.usecase.search_products import (
     SearchProductsInput,
     SearchProductsUseCase,
 )
+from internal.usecase.semantic_search import (
+    SemanticSearchInput,
+    SemanticSearchUseCase,
+)
 from pkg.logger.logger import get_logger
 
 logger = get_logger(__name__)
@@ -137,6 +141,7 @@ class Dependencies:
     create_use_case: Optional[CreateProductUseCase] = None
     enrich_use_case: Optional[EnrichProductUseCase] = None
     search_use_case: Optional[SearchProductsUseCase] = None
+    semantic_search_use_case: Optional[SemanticSearchUseCase] = None
     repository = None
 
 
@@ -173,6 +178,16 @@ def get_search_use_case() -> SearchProductsUseCase:
     return _deps.search_use_case
 
 
+def get_semantic_search_use_case() -> SemanticSearchUseCase:
+    """Get SemanticSearchUseCase instance."""
+    if _deps.semantic_search_use_case is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Service not initialized",
+        )
+    return _deps.semantic_search_use_case
+
+
 def get_repository():
     """Get repository instance."""
     if _deps.repository is None:
@@ -187,6 +202,7 @@ def set_dependencies(
     create_use_case: CreateProductUseCase,
     enrich_use_case: EnrichProductUseCase,
     search_use_case: Optional[SearchProductsUseCase] = None,
+    semantic_search_use_case: Optional[SemanticSearchUseCase] = None,
     repository=None,
 ) -> None:
     """
@@ -197,6 +213,7 @@ def set_dependencies(
     _deps.create_use_case = create_use_case
     _deps.enrich_use_case = enrich_use_case
     _deps.search_use_case = search_use_case
+    _deps.semantic_search_use_case = semantic_search_use_case
     _deps.repository = repository
 
 
@@ -453,6 +470,7 @@ def _build_product_list_item(row: dict) -> ProductListItem:
         enrichment_status=row["enrichment_status"],
         quality_score=float(row["quality_score"]) if row.get("quality_score") else None,
         created_at=row["created_at"],
+        similarity=float(row["similarity"]) if row.get("similarity") is not None else None,
     )
 
 
@@ -590,7 +608,7 @@ async def get_product_details(
     availability = None
     if result["inventory"]:
         availability = AvailabilityDTO(
-            in_stock=result["inventory"].get("in_stock", False),
+            in_stock=bool(result["inventory"].get("in_stock", False)),
             quantity=(
                 int(result["inventory"]["total_quantity"])
                 if result["inventory"].get("total_quantity")
@@ -664,6 +682,54 @@ async def search_products(
 
     product_items = [_build_product_list_item(p) for p in result.products]
 
+    total_pages = (result.total + request.per_page - 1) // request.per_page
+
+    return PaginatedResponse(
+        data=product_items,
+        pagination=PaginationInfo(
+            page=result.page,
+            per_page=result.per_page,
+            total_items=result.total,
+            total_pages=total_pages,
+        ),
+    )
+
+
+@router.post(
+    "/products/search/semantic",
+    response_model=PaginatedResponse,
+    responses={
+        200: {"description": "Semantic search results"},
+    },
+)
+async def semantic_search_products(
+    request: SearchRequest,
+    use_case: SemanticSearchUseCase = Depends(get_semantic_search_use_case),
+) -> PaginatedResponse:
+    """Semantic search endpoint backed by pgvector."""
+
+    logger.info(
+        "Semantic search",
+        query=request.query,
+        page=request.page,
+    )
+
+    input_data = SemanticSearchInput(
+        query=request.query,
+        category_id=request.filters.category_id if request.filters else None,
+        brand=request.filters.brand if request.filters else None,
+        source_name=request.filters.source_name if request.filters else None,
+        min_price=request.filters.min_price if request.filters else None,
+        max_price=request.filters.max_price if request.filters else None,
+        in_stock=request.filters.in_stock if request.filters else None,
+        enrichment_status=request.filters.enrichment_status if request.filters else None,
+        page=request.page,
+        per_page=request.per_page,
+    )
+
+    result = await use_case.execute(input_data)
+
+    product_items = [_build_product_list_item(p) for p in result.products]
     total_pages = (result.total + request.per_page - 1) // request.per_page
 
     return PaginatedResponse(

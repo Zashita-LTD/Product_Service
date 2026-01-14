@@ -13,6 +13,7 @@ from uuid import UUID
 
 import asyncpg
 from asyncpg import Pool
+from pgvector.asyncpg import register_vector
 
 from internal.domain.product import OutboxEvent, ProductFamily
 from internal.domain.value_objects import QualityScore
@@ -243,6 +244,30 @@ class PostgresProductRepository:
                 )
 
         return product
+
+    async def upsert_embedding(
+        self,
+        product_uuid: UUID,
+        embedding: List[float],
+        model: str,
+    ) -> None:
+        """Create or update embedding for a product family."""
+
+        async with self._pool.acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO product_embeddings (product_uuid, embedding, model)
+                VALUES ($1, $2, $3)
+                ON CONFLICT (product_uuid)
+                DO UPDATE SET
+                    embedding = EXCLUDED.embedding,
+                    model = EXCLUDED.model,
+                    updated_at = NOW()
+                """,
+                product_uuid,
+                Vector(embedding),
+                model,
+            )
 
     async def update(self, product: ProductFamily) -> ProductFamily:
         """
@@ -746,6 +771,151 @@ class PostgresProductRepository:
 
             return products, count_row or 0
 
+    async def semantic_search(
+        self,
+        embedding: List[float],
+        category_id: Optional[int] = None,
+        brand: Optional[str] = None,
+        source_name: Optional[str] = None,
+        min_price: Optional[Decimal] = None,
+        max_price: Optional[Decimal] = None,
+        in_stock: Optional[bool] = None,
+        enrichment_status: Optional[str] = None,
+        offset: int = 0,
+        limit: int = 20,
+    ) -> tuple[list[dict], int]:
+        """Semantic search using pgvector similarity."""
+
+        # Build dynamic filters
+        conditions = []
+        params: List[Any] = []
+        param_num = 1
+
+        if category_id is not None:
+            conditions.append(f"pf.category_id = ${param_num}")
+            params.append(category_id)
+            param_num += 1
+
+        if brand is not None:
+            conditions.append(f"pf.brand = ${param_num}")
+            params.append(brand)
+            param_num += 1
+
+        if source_name is not None:
+            conditions.append(f"pf.source_name = ${param_num}")
+            params.append(source_name)
+            param_num += 1
+
+        if enrichment_status is not None:
+            conditions.append(f"pf.enrichment_status = ${param_num}")
+            params.append(enrichment_status)
+            param_num += 1
+
+        price_join = False
+        if min_price is not None:
+            conditions.append(f"p.amount >= ${param_num}")
+            params.append(min_price)
+            param_num += 1
+            price_join = True
+        if max_price is not None:
+            conditions.append(f"p.amount <= ${param_num}")
+            params.append(max_price)
+            param_num += 1
+            price_join = True
+
+        inventory_join = False
+        if in_stock is not None and in_stock:
+            conditions.append("i.quantity > 0")
+            inventory_join = True
+
+        where_clause = " AND ".join(conditions) if conditions else "1=1"
+
+        join_clauses = ""
+        if price_join:
+            join_clauses += (
+                " LEFT JOIN prices p ON pf.uuid = p.product_family_uuid AND p.is_active = true"
+            )
+        if inventory_join:
+            join_clauses += " LEFT JOIN inventory i ON pf.uuid = i.product_family_uuid"
+
+        vector_placeholder = param_num
+        limit_placeholder = param_num + 1
+        offset_placeholder = param_num + 2
+
+        query_sql = f"""
+            SELECT DISTINCT
+                pf.uuid, pf.name_technical, pf.brand, pf.sku, pf.category_id,
+                pf.source_name, pf.enrichment_status, pf.quality_score,
+                pf.created_at, pf.updated_at, pf.external_id, pf.source_url,
+                (1 - (pe.embedding <=> ${vector_placeholder}::vector)) AS similarity
+            FROM product_embeddings pe
+            JOIN product_families pf ON pf.uuid = pe.product_uuid
+            {join_clauses}
+            WHERE {where_clause}
+            ORDER BY pe.embedding <=> ${vector_placeholder}::vector, pf.created_at DESC
+            LIMIT ${limit_placeholder} OFFSET ${offset_placeholder}
+        """
+
+        count_query = f"""
+            SELECT COUNT(DISTINCT pf.uuid)
+            FROM product_embeddings pe
+            JOIN product_families pf ON pf.uuid = pe.product_uuid
+            {join_clauses}
+            WHERE {where_clause}
+        """
+
+        data_params: List[Any] = params + [Vector(embedding), limit, offset]
+        count_params = params.copy()
+
+        async with self._pool.acquire() as conn:
+            rows = await conn.fetch(query_sql, *data_params)
+            count_row = await conn.fetchval(count_query, *count_params)
+
+            products = []
+            for row in rows:
+                product_dict = dict(row)
+                products.append(product_dict)
+
+            return products, count_row or 0
+
+    async def get_products_missing_embeddings(
+        self,
+        limit: int = 100,
+    ) -> list[dict]:
+        """Return basic product data for records without embeddings."""
+
+        async with self._pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT
+                    pf.uuid,
+                    pf.name_technical,
+                    pf.brand,
+                    pf.description,
+                    pf.source_name,
+                    COALESCE(
+                        json_agg(
+                            json_build_object(
+                                'name', pa.name,
+                                'value', pa.value,
+                                'unit', pa.unit
+                            )
+                        ) FILTER (WHERE pa.id IS NOT NULL),
+                        '[]'
+                    ) AS attributes
+                FROM product_families pf
+                LEFT JOIN product_embeddings pe ON pf.uuid = pe.product_uuid
+                LEFT JOIN product_attributes pa ON pa.product_uuid = pf.uuid
+                WHERE pe.product_uuid IS NULL
+                GROUP BY pf.uuid
+                ORDER BY pf.created_at ASC
+                LIMIT $1
+                """,
+                limit,
+            )
+
+            return [dict(row) for row in rows]
+
     def _serialize_json(self, data: dict) -> str:
         """
         Safely serialize data to JSON.
@@ -777,8 +947,13 @@ async def create_pool(dsn: str, min_size: int = 10, max_size: int = 50) -> Pool:
     Returns:
         asyncpg connection pool.
     """
-    return await asyncpg.create_pool(
+    async def init_connection(conn):
+        await register_vector(conn)
+    
+    pool = await asyncpg.create_pool(
         dsn=dsn,
         min_size=min_size,
         max_size=max_size,
+        init=init_connection,
     )
+    return pool

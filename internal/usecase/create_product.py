@@ -8,6 +8,10 @@ from uuid import UUID
 
 from internal.domain.product import ProductFamily, OutboxEvent
 from internal.domain.errors import ProductAlreadyExistsError
+from pkg.logger.logger import get_logger
+
+
+logger = get_logger(__name__)
 
 
 class ProductRepository(Protocol):
@@ -29,12 +33,34 @@ class ProductRepository(Protocol):
         """Create product with outbox event atomically."""
         ...
 
+    async def upsert_embedding(
+        self,
+        product_uuid: UUID,
+        embedding: list[float],
+        model: str,
+    ) -> None:
+        """Persist embedding for a product."""
+        ...
+
 
 class CacheService(Protocol):
     """Protocol for cache operations."""
 
     async def invalidate_product(self, uuid: str) -> bool:
         """Invalidate cache for a product."""
+        ...
+
+
+class EmbeddingClient(Protocol):
+    """Protocol for semantic embedding providers."""
+
+    @property
+    def model_name(self) -> str:  # pragma: no cover - structural typing helper
+        """Identifier of the model used."""
+        ...
+
+    async def generate_embedding(self, text: str) -> list[float]:
+        """Generate embedding for provided text."""
         ...
 
     async def invalidate_category(self, category_id: int) -> int:
@@ -93,6 +119,7 @@ class CreateProductUseCase:
         self,
         repository: ProductRepository,
         cache: Optional[CacheService] = None,
+        embedding_client: Optional["EmbeddingClient"] = None,
     ) -> None:
         """
         Initialize the use case.
@@ -103,6 +130,7 @@ class CreateProductUseCase:
         """
         self._repository = repository
         self._cache = cache
+        self._embedding_client = embedding_client
 
     async def execute(self, input_dto: CreateProductInput) -> CreateProductOutput:
         """
@@ -160,4 +188,26 @@ class CreateProductUseCase:
             await self._cache.invalidate_product(str(product.uuid))
             await self._cache.invalidate_category(product.category_id)
 
+        await self._maybe_store_embedding(created_product)
+
         return CreateProductOutput(product=created_product)
+
+    async def _maybe_store_embedding(self, product: ProductFamily) -> None:
+        """Generate and store embedding if provider configured."""
+
+        if not self._embedding_client:
+            return
+
+        try:
+            embedding = await self._embedding_client.generate_embedding(product.name_technical)
+            await self._repository.upsert_embedding(
+                product_uuid=product.uuid,
+                embedding=embedding,
+                model=self._embedding_client.model_name,
+            )
+        except Exception as exc:  # pragma: no cover - best-effort
+            logger.warning(
+                "Failed to store embedding for product",
+                uuid=str(product.uuid),
+                error=str(exc),
+            )

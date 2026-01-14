@@ -19,6 +19,7 @@ from internal.infrastructure.postgres.repository import (
     PostgresProductRepository,
     create_pool,
 )
+from internal.infrastructure.ai_provider.vertex_client import VertexAIEmbeddingClient
 from pkg.logger.logger import get_logger, setup_logging
 
 # Load environment variables
@@ -42,6 +43,9 @@ KAFKA_BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
 KAFKA_GROUP_ID = os.getenv("KAFKA_GROUP_ID", "product-service-raw-consumer")
 KAFKA_RAW_PRODUCTS_TOPIC = os.getenv("KAFKA_RAW_PRODUCTS_TOPIC", "raw-products")
 DEFAULT_CATEGORY_ID = int(os.getenv("DEFAULT_CATEGORY_ID", "1"))
+VERTEX_PROJECT_ID = os.getenv("VERTEX_PROJECT_ID", "")
+VERTEX_LOCATION = os.getenv("VERTEX_LOCATION", "us-central1")
+VERTEX_EMBEDDING_MODEL = os.getenv("VERTEX_EMBEDDING_MODEL", "text-embedding-004")
 
 
 class RawProductsWorker:
@@ -74,9 +78,25 @@ class RawProductsWorker:
         # Create repository
         repository = PostgresProductRepository(self._db_pool)
 
+        embedding_client = None
+        if VERTEX_PROJECT_ID:
+            try:
+                embedding_client = VertexAIEmbeddingClient(
+                    project_id=VERTEX_PROJECT_ID,
+                    location=VERTEX_LOCATION,
+                    model_id=VERTEX_EMBEDDING_MODEL,
+                )
+                await embedding_client.initialize()
+                logger.info("Vertex AI embedding client ready")
+            except Exception as exc:
+                logger.warning("Failed to initialize Vertex embeddings", error=str(exc))
+
+
         # Create import handler
         handler = RawProductImportHandler(
-            repository=repository, default_category_id=DEFAULT_CATEGORY_ID
+            repository=repository,
+            default_category_id=DEFAULT_CATEGORY_ID,
+            embedding_client=embedding_client,
         )
 
         # Initialize Kafka consumer

@@ -6,7 +6,7 @@ Reads messages from the 'raw-products' topic and imports them into the database.
 
 import json
 from typing import TYPE_CHECKING, Any, Optional
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from aiokafka import AIOKafkaConsumer
 from aiokafka.errors import KafkaError
@@ -18,6 +18,7 @@ from pkg.logger.logger import get_logger
 
 if TYPE_CHECKING:
     from internal.usecase.category_service import CategoryService
+    from internal.infrastructure.ai_provider.vertex_client import VertexAIEmbeddingClient
 
 logger = get_logger(__name__)
 
@@ -216,6 +217,7 @@ class RawProductImportHandler:
         repository: PostgresProductRepository,
         category_service: Optional["CategoryService"] = None,
         default_category_id: int = 1,
+        embedding_client: Optional["VertexAIEmbeddingClient"] = None,
     ) -> None:
         """
         Initialize the handler.
@@ -228,6 +230,7 @@ class RawProductImportHandler:
         self._repository = repository
         self._category_service = category_service
         self._default_category_id = default_category_id
+        self._embedding_client = embedding_client
 
     async def handle(self, raw_product: dict) -> str:
         """
@@ -291,6 +294,14 @@ class RawProductImportHandler:
                 product_uuid=product.uuid,
                 product_name=product.name_technical,
                 source_url=source_url,
+            )
+
+            await self._maybe_store_embedding(
+                product_uuid=product.uuid,
+                name=name_original,
+                brand=raw_product.get("brand"),
+                description=raw_product.get("description"),
+                attributes=raw_product.get("attributes", []),
             )
 
             return "imported"
@@ -423,3 +434,66 @@ class RawProductImportHandler:
         )
 
         return product
+
+    async def _maybe_store_embedding(
+        self,
+        product_uuid: UUID,
+        name: str,
+        brand: Optional[str],
+        description: Optional[str],
+        attributes: list[dict],
+    ) -> None:
+        """Generate and persist embedding after product import."""
+
+        if not self._embedding_client:
+            return
+
+        text = self._build_embedding_text(
+            name=name,
+            brand=brand,
+            description=description,
+            attributes=attributes,
+        )
+
+        if not text:
+            return
+
+        try:
+            embedding = await self._embedding_client.generate_embedding(text)
+            await self._repository.upsert_embedding(
+                product_uuid=product_uuid,
+                embedding=embedding,
+                model=self._embedding_client.model_name,
+            )
+        except Exception as exc:  # pragma: no cover - best-effort logging
+            logger.warning(
+                "Failed to persist embedding for product",
+                uuid=str(product_uuid),
+                error=str(exc),
+            )
+
+    def _build_embedding_text(
+        self,
+        name: str,
+        brand: Optional[str],
+        description: Optional[str],
+        attributes: list[dict],
+    ) -> str:
+        """Compose rich text used for semantic embeddings."""
+
+        parts: list[str] = [name]
+        if brand:
+            parts.append(f"Бренд: {brand}")
+        if description:
+            parts.append(description)
+        if attributes:
+            for attr in attributes:
+                attr_name = attr.get("name")
+                attr_value = attr.get("value")
+                if not attr_name or not attr_value:
+                    continue
+                unit = attr.get("unit")
+                formatted = f"{attr_name}: {attr_value}{(' ' + unit) if unit else ''}"
+                parts.append(formatted)
+
+        return "\n".join(segment.strip() for segment in parts if segment)

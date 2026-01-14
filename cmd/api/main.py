@@ -20,10 +20,14 @@ from internal.infrastructure.postgres.repository import (
     create_pool,
 )
 from internal.infrastructure.redis.cache import RedisCache, ProductCacheService
-from internal.infrastructure.ai_provider.vertex_client import VertexAIClientWithFallback
+from internal.infrastructure.ai_provider.vertex_client import (
+    VertexAIClientWithFallback,
+    VertexAIEmbeddingClient,
+)
 from internal.usecase.create_product import CreateProductUseCase
 from internal.usecase.enrich_product import EnrichProductUseCase
 from internal.usecase.search_products import SearchProductsUseCase
+from internal.usecase.semantic_search import SemanticSearchUseCase
 from pkg.logger.logger import setup_logging, get_logger, set_request_id
 
 
@@ -47,12 +51,14 @@ DATABASE_URL = os.getenv(
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 VERTEX_PROJECT_ID = os.getenv("VERTEX_PROJECT_ID", "")
 VERTEX_LOCATION = os.getenv("VERTEX_LOCATION", "us-central1")
+VERTEX_EMBEDDING_MODEL = os.getenv("VERTEX_EMBEDDING_MODEL", "text-embedding-004")
 
 
 # Global resources
 db_pool = None
 redis_cache = None
 ai_client = None
+embedding_client = None
 
 
 @asynccontextmanager
@@ -62,7 +68,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     
     Handles startup and shutdown of resources.
     """
-    global db_pool, redis_cache, ai_client
+    global db_pool, redis_cache, ai_client, embedding_client
     
     logger.info("Starting Product Service API...")
     
@@ -95,8 +101,21 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         except Exception as e:
             logger.warning("Failed to initialize Vertex AI", error=str(e))
             ai_client = None
+
+        try:
+            embedding_client = VertexAIEmbeddingClient(
+                project_id=VERTEX_PROJECT_ID,
+                location=VERTEX_LOCATION,
+                model_id=VERTEX_EMBEDDING_MODEL,
+            )
+            await embedding_client.initialize()
+            logger.info("Vertex AI embedding client initialized")
+        except Exception as e:
+            logger.warning("Failed to initialize Vertex embeddings", error=str(e))
+            embedding_client = None
     else:
         logger.warning("VERTEX_PROJECT_ID not set, AI enrichment disabled")
+        embedding_client = None
     
     # Create repositories and services
     repository = PostgresProductRepository(db_pool)
@@ -106,6 +125,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     create_use_case = CreateProductUseCase(
         repository=repository,
         cache=cache_service,
+        embedding_client=embedding_client,
     )
     enrich_use_case = EnrichProductUseCase(
         repository=repository,
@@ -115,12 +135,17 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     search_use_case = SearchProductsUseCase(
         repository=repository,
     )
+    semantic_search_use_case = SemanticSearchUseCase(
+        repository=repository,
+        embedding_client=embedding_client,
+    )
     
     # Set dependencies for handlers
     set_dependencies(
         create_use_case=create_use_case,
         enrich_use_case=enrich_use_case,
         search_use_case=search_use_case,
+        semantic_search_use_case=semantic_search_use_case,
         repository=repository,
     )
     

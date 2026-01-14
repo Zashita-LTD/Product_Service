@@ -1,6 +1,6 @@
 # Makefile for Product Service
 
-.PHONY: help install dev run-api run-worker run-parser test lint format migrate docker-up docker-down clean
+.PHONY: help install dev run-api run-worker run-parser test lint format migrate docker-up docker-down clean backfill-embeddings
 
 # Default target
 help:
@@ -16,6 +16,7 @@ help:
 	@echo "Database:"
 	@echo "  make migrate     - Run database migrations"
 	@echo "  make migrate-status - Show migration status"
+	@echo "  make backfill-embeddings - Generate embeddings for legacy товаров"
 	@echo ""
 	@echo "Testing:"
 	@echo "  make test        - Run all tests"
@@ -66,6 +67,9 @@ migrate:
 migrate-status:
 	@echo "Checking migration status..."
 	cd cmd/migrator && python -c "import asyncio; from main import get_applied_migrations; print(asyncio.run(get_applied_migrations()))"
+
+backfill-embeddings:
+	cd cmd/backfill_embeddings && python main.py
 
 # Testing
 test:
