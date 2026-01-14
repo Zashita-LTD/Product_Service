@@ -14,11 +14,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 
 from internal.transport.http.v1.handlers import router, set_dependencies
+from internal.transport.http.v1.crm import router as crm_router, set_crm_repository
 from internal.transport.http.middleware import MetricsMiddleware
 from internal.infrastructure.postgres.repository import (
     PostgresProductRepository,
     create_pool,
 )
+from internal.infrastructure.postgres.crm_repository import CRMRepository
 from internal.infrastructure.redis.cache import RedisCache, ProductCacheService
 from internal.infrastructure.ai_provider.vertex_client import (
     VertexAIClientWithFallback,
@@ -149,6 +151,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         repository=repository,
     )
     
+    # Initialize CRM repository
+    crm_repository = CRMRepository(db_pool)
+    set_crm_repository(crm_repository)
+    logger.info("CRM repository initialized")
+    
     logger.info("Product Service API started successfully")
     
     yield
@@ -211,6 +218,7 @@ async def request_id_middleware(request: Request, call_next) -> Response:
 
 # Include routers
 app.include_router(router)
+app.include_router(crm_router)
 
 
 # Root endpoint
