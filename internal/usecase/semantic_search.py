@@ -15,9 +15,11 @@ class EmbeddingClient(Protocol):
 
     @property
     def model_name(self) -> str:  # pragma: no cover - structural typing helper
+        """Model name identifier."""
         ...
 
     async def generate_embedding(self, text: str) -> list[float]:
+        """Generate embedding for text."""
         ...
 
 

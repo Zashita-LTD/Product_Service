@@ -29,7 +29,9 @@ logger = get_logger(__name__)
 
 class ImportHandlerProtocol(Protocol):
     """Protocol for import handlers."""
+
     async def handle(self, raw_product: dict) -> str:
+        """Handle raw product import."""
         ...
 
 
