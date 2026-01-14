@@ -20,6 +20,7 @@ from parser_service.internal.parsers import (
     LeroyMerlinParser,
     SdvorParser,
     ObiParser,
+    DemoParser,
 )
 from parser_service.internal.models.product import RawProduct
 from parser_service.config.settings import settings
@@ -60,7 +61,10 @@ class ParserScheduler:
         # Initialize Playwright browser
         self._playwright = await async_playwright().start()
         self._browser = await self._playwright.chromium.launch(headless=settings.HEADLESS_BROWSER)
-        self._context = await self._browser.new_context()
+        self._context = await self._browser.new_context(
+            ignore_https_errors=True,
+            user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        )
         print("Browser initialized")
 
         # Initialize Kafka producer
@@ -113,6 +117,7 @@ class ParserScheduler:
             "leroymerlin": lambda: LeroyMerlinParser(settings.LEROYMERLIN_BASE_URL),
             "sdvor": lambda: SdvorParser(settings.SDVOR_BASE_URL),
             "obi": lambda: ObiParser(settings.OBI_BASE_URL),
+            "demo": lambda: DemoParser(),
         }
 
         for parser_name in enabled:

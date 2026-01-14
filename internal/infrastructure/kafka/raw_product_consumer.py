@@ -2,10 +2,13 @@
 Kafka Consumer for raw products from Parser Service.
 
 Reads messages from the 'raw-products' topic and imports them into the database.
+Supports two modes:
+- Legacy: RawProductImportHandler (direct import)
+- MDM: MDMImportHandler (deduplication & enrichment pipeline)
 """
 
 import json
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any, Optional, Protocol
 from uuid import UUID, uuid4
 
 from aiokafka import AIOKafkaConsumer
@@ -18,9 +21,16 @@ from pkg.logger.logger import get_logger
 
 if TYPE_CHECKING:
     from internal.usecase.category_service import CategoryService
+    from internal.usecase.product_refinery import ProductRefinery
     from internal.infrastructure.ai_provider.vertex_client import VertexAIEmbeddingClient
 
 logger = get_logger(__name__)
+
+
+class ImportHandlerProtocol(Protocol):
+    """Protocol for import handlers."""
+    async def handle(self, raw_product: dict) -> str:
+        ...
 
 
 class RawProductConsumer:
@@ -62,12 +72,12 @@ class RawProductConsumer:
             "total_processed": 0,
         }
 
-    def set_handler(self, handler: "RawProductImportHandler") -> None:
+    def set_handler(self, handler: "ImportHandlerProtocol") -> None:
         """
         Set the import handler.
 
         Args:
-            handler: RawProductImportHandler instance.
+            handler: Handler implementing ImportHandlerProtocol.
         """
         self._handler = handler
 
@@ -126,6 +136,10 @@ class RawProductConsumer:
                         self._stats["imported"] += 1
                         # Track successful import metric
                         KAFKA_MESSAGES_CONSUMED.labels(topic=self._topic, status='success').inc()
+                    elif result == "enriched":
+                        # NEW: Track enriched products (MDM mode)
+                        self._stats["imported"] += 1  # Count as success
+                        KAFKA_MESSAGES_CONSUMED.labels(topic=self._topic, status='enriched').inc()
                     elif result == "duplicate":
                         self._stats["duplicates"] += 1
                         # Track duplicate metric
@@ -497,3 +511,85 @@ class RawProductImportHandler:
                 parts.append(formatted)
 
         return "\n".join(segment.strip() for segment in parts if segment)
+
+
+# ============================================================================
+# MDM IMPORT HANDLER (NEW)
+# ============================================================================
+
+class MDMImportHandler:
+    """
+    MDM (Master Data Management) handler for raw product imports.
+    
+    Uses ProductRefinery for intelligent processing:
+    - Saves raw snapshot (no data loss)
+    - Deduplicates by EAN, SKU+Brand, Vector Search
+    - Enriches existing products with new data
+    - Links to manufacturers
+    
+    This replaces RawProductImportHandler when USE_MDM_PIPELINE=true.
+    """
+
+    def __init__(self, refinery: "ProductRefinery") -> None:
+        """
+        Initialize MDM handler.
+        
+        Args:
+            refinery: ProductRefinery instance for MDM processing.
+        """
+        self._refinery = refinery
+
+    async def handle(self, raw_product: dict) -> str:
+        """
+        Handle a raw product import via MDM pipeline.
+
+        Args:
+            raw_product: Raw product data from parser.
+
+        Returns:
+            "imported" - new product created
+            "enriched" - existing product enriched
+            "duplicate" - no changes needed
+            "error" - processing failed
+        """
+        source_url = raw_product.get("source_url", "")
+
+        # Validate required fields
+        if not source_url:
+            logger.warning("Missing source_url, skipping")
+            return "error"
+
+        name_original = raw_product.get("name_original")
+        if not name_original:
+            logger.warning("Missing name_original, skipping", source_url=source_url)
+            return "error"
+
+        try:
+            # Process through MDM pipeline
+            result = await self._refinery.process(raw_product)
+            
+            logger.info(
+                "MDM processing complete",
+                source_url=source_url,
+                status=result.status,
+                product_uuid=str(result.product_uuid) if result.product_uuid else None,
+                enrichments=result.enrichments,
+            )
+
+            # Map refinery status to handler status
+            status_map = {
+                'new_product': 'imported',
+                'enriched': 'enriched',
+                'duplicate': 'duplicate',
+                'error': 'error',
+            }
+            
+            return status_map.get(result.status, 'error')
+
+        except Exception as e:
+            logger.error(
+                "MDM processing failed",
+                source_url=source_url,
+                error=str(e),
+            )
+            return "error"

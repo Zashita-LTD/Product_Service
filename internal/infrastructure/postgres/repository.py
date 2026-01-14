@@ -520,13 +520,17 @@ class PostgresProductRepository:
             )
         if in_stock is not None and in_stock:
             join_clauses += " LEFT JOIN inventory i ON pf.uuid = i.product_family_uuid"
+        
+        # Always join product_images to get main image
+        join_clauses += " LEFT JOIN product_images pi ON pf.uuid = pi.product_uuid AND pi.is_main = true"
 
         # Query for products
         query = f"""
             SELECT DISTINCT
                 pf.uuid, pf.name_technical, pf.brand, pf.sku, pf.category_id,
                 pf.source_name, pf.enrichment_status, pf.quality_score,
-                pf.created_at, pf.updated_at, pf.external_id, pf.source_url
+                pf.created_at, pf.updated_at, pf.external_id, pf.source_url,
+                pi.url as image_url
             FROM product_families pf
             {join_clauses}
             WHERE {where_clause}
@@ -730,6 +734,9 @@ class PostgresProductRepository:
             )
         if in_stock is not None and in_stock:
             join_clauses += " LEFT JOIN inventory i ON pf.uuid = i.product_family_uuid"
+        
+        # Always join product_images to get main image
+        join_clauses += " LEFT JOIN product_images pi ON pf.uuid = pi.product_uuid AND pi.is_main = true"
 
         # Query for products with relevance ranking
         query_sql = f"""
@@ -737,6 +744,7 @@ class PostgresProductRepository:
                 pf.uuid, pf.name_technical, pf.brand, pf.sku, pf.category_id,
                 pf.source_name, pf.enrichment_status, pf.quality_score,
                 pf.created_at, pf.updated_at, pf.external_id, pf.source_url,
+                pi.url as image_url,
                 ts_rank(pf.search_vector, plainto_tsquery('russian', $1)) as rank
             FROM product_families pf
             {join_clauses}
@@ -837,6 +845,9 @@ class PostgresProductRepository:
             )
         if inventory_join:
             join_clauses += " LEFT JOIN inventory i ON pf.uuid = i.product_family_uuid"
+        
+        # Always join product_images to get main image
+        join_clauses += " LEFT JOIN product_images pi ON pf.uuid = pi.product_uuid AND pi.is_main = true"
 
         vector_placeholder = param_num
         limit_placeholder = param_num + 1
@@ -847,6 +858,7 @@ class PostgresProductRepository:
                 pf.uuid, pf.name_technical, pf.brand, pf.sku, pf.category_id,
                 pf.source_name, pf.enrichment_status, pf.quality_score,
                 pf.created_at, pf.updated_at, pf.external_id, pf.source_url,
+                pi.url as image_url,
                 (1 - (pe.embedding <=> ${vector_placeholder}::vector)) AS similarity
             FROM product_embeddings pe
             JOIN product_families pf ON pf.uuid = pe.product_uuid

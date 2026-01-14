@@ -466,6 +466,7 @@ def _build_product_list_item(row: dict) -> ProductListItem:
         sku=row.get("sku"),
         category=_build_category_dto(row["category_id"]),
         price=price_dto,
+        image_url=row.get("image_url"),
         source_name=row.get("source_name"),
         enrichment_status=row["enrichment_status"],
         quality_score=float(row["quality_score"]) if row.get("quality_score") else None,

@@ -30,21 +30,35 @@ class LeroyMerlinParser(BaseParser):
 
     async def get_category_urls(self, page: Page) -> List[str]:
         """Get category URLs from Leroy Merlin catalog."""
-        await page.goto(f"{self.base_url}/catalogue/")
-        await page.wait_for_load_state("networkidle")
+        # Use hardcoded popular categories to avoid scraping issues
+        categories = [
+            "/catalogue/elektroprovodka/",
+            "/catalogue/elektrika/",
+            "/catalogue/raskhodniki-dlya-elektro/",
+            "/catalogue/osveschenie/",
+            "/catalogue/vyklyuchateli-rozetki/",
+            "/catalogue/kabeli-provoda/",
+            "/catalogue/avtomaticheskie-vyklyuchateli/",
+        ]
+        
+        # Try to get more categories from the page
+        try:
+            await page.goto(f"{self.base_url}/catalogue/", timeout=30000)
+            await page.wait_for_load_state("networkidle", timeout=10000)
 
-        # Extract category links from mega-menu
-        category_elements = await page.query_selector_all('a[href*="/catalogue/"]')
-        urls = []
-
-        for elem in category_elements:
-            href = await elem.get_attribute("href")
-            if href and href.startswith("/catalogue/") and href != "/catalogue/":
-                full_url = f"{self.base_url}{href}" if href.startswith("/") else href
-                if full_url not in urls and "/product/" not in full_url:
-                    urls.append(full_url)
-
-        return urls
+            # Extract category links from mega-menu
+            category_elements = await page.query_selector_all('a[href*="/catalogue/"]')
+            
+            for elem in category_elements:
+                href = await elem.get_attribute("href")
+                if href and href.startswith("/catalogue/") and href != "/catalogue/":
+                    if href not in categories and "/product/" not in href:
+                        categories.append(href)
+        except Exception as e:
+            print(f"Warning: Could not fetch additional categories: {e}")
+        
+        # Return full URLs
+        return [f"{self.base_url}{cat}" if cat.startswith("/") else cat for cat in categories[:10]]
 
     async def get_product_urls(self, page: Page, category_url: str) -> AsyncGenerator[str, None]:
         """Get product URLs from Leroy Merlin category with pagination."""

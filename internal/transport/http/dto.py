@@ -158,6 +158,7 @@ class ProductListItem(BaseModel):
     sku: Optional[str] = Field(None, description="SKU")
     category: CategoryShort = Field(..., description="Category information")
     price: Optional[PriceDTO] = Field(None, description="Price information")
+    image_url: Optional[str] = Field(None, description="Main image URL for thumbnail")
     source_name: Optional[str] = Field(None, description="Source name")
     enrichment_status: str = Field(..., description="Enrichment status")
     quality_score: Optional[float] = Field(None, description="Quality score (0.00 - 1.00)")
@@ -176,6 +177,7 @@ class ProductListItem(BaseModel):
                 "sku": "123456",
                 "category": {"id": 10, "name": "Кирпич", "path": ["Стройматериалы", "Кирпич"]},
                 "price": {"value": "15.50", "currency": "RUB", "unit": "шт"},
+                "image_url": "https://example.com/product-thumb.jpg",
                 "source_name": "petrovich.ru",
                 "enrichment_status": "enriched",
                 "quality_score": 0.85,

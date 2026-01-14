@@ -1,0 +1,26 @@
+# Parser Service Dockerfile
+# Uses Playwright for web scraping
+
+FROM mcr.microsoft.com/playwright/python:v1.40.0-jammy
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
+
+WORKDIR /app
+
+# Install Python dependencies
+COPY requirements.txt ./
+RUN pip install --upgrade pip && pip install -r requirements.txt
+
+# Install additional parser dependencies
+RUN pip install playwright aiokafka prometheus-client
+
+# Copy source code
+COPY . .
+
+# Set Python path
+ENV PYTHONPATH=/app
+
+# Run parser
+CMD ["python", "-m", "parser_service.cmd.main"]

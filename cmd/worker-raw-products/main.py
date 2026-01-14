@@ -2,6 +2,10 @@
 Raw Products Import Worker Entry Point.
 
 Consumes raw products from Parser Service and imports them into the database.
+Now with MDM (Master Data Management) pipeline:
+- Deduplication by EAN, SKU+Brand, Vector Search
+- Data enrichment from multiple sources
+- Manufacturer linking
 """
 
 import asyncio
@@ -14,12 +18,19 @@ from dotenv import load_dotenv
 from internal.infrastructure.kafka.raw_product_consumer import (
     RawProductConsumer,
     RawProductImportHandler,
+    MDMImportHandler,
 )
 from internal.infrastructure.postgres.repository import (
     PostgresProductRepository,
     create_pool,
 )
+from internal.infrastructure.postgres.raw_repository import (
+    RawSnapshotRepository,
+    ProductSourceLinkRepository,
+    EnrichmentAuditRepository,
+)
 from internal.infrastructure.ai_provider.vertex_client import VertexAIEmbeddingClient
+from internal.usecase.product_refinery import ProductRefinery
 from pkg.logger.logger import get_logger, setup_logging
 
 # Load environment variables
@@ -47,12 +58,18 @@ VERTEX_PROJECT_ID = os.getenv("VERTEX_PROJECT_ID", "")
 VERTEX_LOCATION = os.getenv("VERTEX_LOCATION", "us-central1")
 VERTEX_EMBEDDING_MODEL = os.getenv("VERTEX_EMBEDDING_MODEL", "text-embedding-004")
 
+# MDM Feature Flag - включаем новую логику
+USE_MDM_PIPELINE = os.getenv("USE_MDM_PIPELINE", "true").lower() == "true"
+
 
 class RawProductsWorker:
     """
     Worker for processing raw product imports from Parser Service.
 
     Consumes events from Kafka and imports products into the database.
+    Supports two modes:
+    - Legacy: Direct import (RawProductImportHandler)
+    - MDM: Deduplication & Enrichment pipeline (MDMImportHandler)
     """
 
     def __init__(self) -> None:
@@ -63,7 +80,10 @@ class RawProductsWorker:
 
     async def start(self) -> None:
         """Start the worker."""
-        logger.info("Starting Raw Products Import Worker...")
+        logger.info(
+            "Starting Raw Products Import Worker...",
+            mdm_enabled=USE_MDM_PIPELINE,
+        )
 
         self._running = True
 
@@ -78,6 +98,7 @@ class RawProductsWorker:
         # Create repository
         repository = PostgresProductRepository(self._db_pool)
 
+        # Initialize embedding client
         embedding_client = None
         if VERTEX_PROJECT_ID:
             try:
@@ -91,13 +112,33 @@ class RawProductsWorker:
             except Exception as exc:
                 logger.warning("Failed to initialize Vertex embeddings", error=str(exc))
 
-
-        # Create import handler
-        handler = RawProductImportHandler(
-            repository=repository,
-            default_category_id=DEFAULT_CATEGORY_ID,
-            embedding_client=embedding_client,
-        )
+        # Create handler based on mode
+        if USE_MDM_PIPELINE:
+            # NEW: MDM Pipeline with deduplication & enrichment
+            raw_repo = RawSnapshotRepository(self._db_pool)
+            source_link_repo = ProductSourceLinkRepository(self._db_pool)
+            audit_repo = EnrichmentAuditRepository(self._db_pool)
+            
+            refinery = ProductRefinery(
+                pool=self._db_pool,
+                product_repo=repository,
+                raw_repo=raw_repo,
+                source_link_repo=source_link_repo,
+                audit_repo=audit_repo,
+                embedding_client=embedding_client,
+                default_category_id=DEFAULT_CATEGORY_ID,
+            )
+            
+            handler = MDMImportHandler(refinery=refinery)
+            logger.info("MDM Pipeline handler initialized")
+        else:
+            # Legacy: Direct import
+            handler = RawProductImportHandler(
+                repository=repository,
+                default_category_id=DEFAULT_CATEGORY_ID,
+                embedding_client=embedding_client,
+            )
+            logger.info("Legacy import handler initialized")
 
         # Initialize Kafka consumer
         self._consumer = RawProductConsumer(
