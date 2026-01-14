@@ -17,8 +17,8 @@ redis==5.0.1
 
 # Serialization
 msgpack==1.0.7
-pydantic==2.5.3
-pydantic-settings==2.1.0
+pydantic==2.10.0
+pydantic-settings==2.6.0
 
 # Google Cloud AI
 google-cloud-aiplatform>=1.38.1
