@@ -14,6 +14,19 @@ from .errors import (
     CacheError,
     EventPublishError,
 )
+from .crm import (
+    Manufacturer,
+    Supplier,
+    Person,
+    CareerRecord,
+    Interaction,
+    PartnerStatus,
+    SupplierStatus,
+    CompanyType,
+    InteractionType,
+    InteractionDirection,
+    SupplierManufacturer,
+)
 
 __all__ = [
     "ProductFamily",
@@ -28,5 +41,17 @@ __all__ = [
     "ProductAlreadyExistsError",
     "EnrichmentError",
     "CacheError",
+    # CRM
+    "Manufacturer",
+    "Supplier",
+    "Person",
+    "CareerRecord",
+    "Interaction",
+    "PartnerStatus",
+    "SupplierStatus",
+    "CompanyType",
+    "InteractionType",
+    "InteractionDirection",
+    "SupplierManufacturer",
     "EventPublishError",
 ]
