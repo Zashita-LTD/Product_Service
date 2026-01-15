@@ -302,6 +302,21 @@ class RawProductImportHandler:
         )
 
         # 4. Create product with all related data
+        # Normalize images: parser sends list of URLs as strings, 
+        # repository expects list of dicts with "url" key
+        raw_images = raw_product.get("images", [])
+        normalized_images = []
+        for idx, img in enumerate(raw_images):
+            if isinstance(img, str):
+                normalized_images.append({
+                    "url": img,
+                    "alt_text": name_original,
+                    "is_main": idx == 0,
+                    "sort_order": idx,
+                })
+            elif isinstance(img, dict):
+                normalized_images.append(img)
+        
         try:
             product = await self._create_product(
                 name_technical=name_original,
@@ -314,7 +329,7 @@ class RawProductImportHandler:
                 description=raw_product.get("description"),
                 attributes=raw_product.get("attributes", []),
                 documents=raw_product.get("documents", []),
-                images=raw_product.get("images", []),
+                images=normalized_images,
                 schema_org_data=raw_product.get("schema_org_data"),
             )
 

@@ -828,7 +828,7 @@ class ProductRefinery:
 
         logger.info(
             "Creating new product",
-            name=name_technical[:50],
+            product_name=name_technical[:50],
             source=source,
             ean=snapshot.extracted_ean,
             brand=snapshot.extracted_brand,
@@ -872,13 +872,16 @@ class ProductRefinery:
             images=[{'url': url} for url in raw.get('images', [])],
         )
 
-        # Привязываем к производителю
+        # Привязываем к производителю (если таблица существует)
         manufacturer_id = None
         if snapshot.extracted_brand:
-            manufacturer_id = await self._manufacturer_linker.link_manufacturer(
-                product.uuid,
-                snapshot.extracted_brand,
-            )
+            try:
+                manufacturer_id = await self._manufacturer_linker.link_manufacturer(
+                    product.uuid,
+                    snapshot.extracted_brand,
+                )
+            except Exception as e:
+                logger.warning("Manufacturer linking skipped", error=str(e))
 
         # Создаём эмбеддинг для будущего поиска
         if self._embedding_client:

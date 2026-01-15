@@ -254,6 +254,9 @@ class PostgresProductRepository:
         """Create or update embedding for a product family."""
 
         async with self._pool.acquire() as conn:
+            # pgvector with register_vector accepts numpy arrays directly
+            import numpy as np
+            embedding_array = np.array(embedding, dtype=np.float32)
             await conn.execute(
                 """
                 INSERT INTO product_embeddings (product_uuid, embedding, model)
@@ -265,7 +268,7 @@ class PostgresProductRepository:
                     updated_at = NOW()
                 """,
                 product_uuid,
-                Vector(embedding),
+                embedding_array,
                 model,
             )
 
@@ -854,7 +857,7 @@ class PostgresProductRepository:
         offset_placeholder = param_num + 2
 
         query_sql = f"""
-            SELECT DISTINCT
+            SELECT
                 pf.uuid, pf.name_technical, pf.brand, pf.sku, pf.category_id,
                 pf.source_name, pf.enrichment_status, pf.quality_score,
                 pf.created_at, pf.updated_at, pf.external_id, pf.source_url,
@@ -876,7 +879,10 @@ class PostgresProductRepository:
             WHERE {where_clause}
         """
 
-        data_params: List[Any] = params + [Vector(embedding), limit, offset]
+        # pgvector with register_vector accepts numpy arrays directly
+        import numpy as np
+        embedding_array = np.array(embedding, dtype=np.float32)
+        data_params: List[Any] = params + [embedding_array, limit, offset]
         count_params = params.copy()
 
         async with self._pool.acquire() as conn:
